@@ -1,0 +1,33 @@
+.
+├── README.md
+├── docgen
+│   ├── __init__.py
+│   ├── analyzers
+│   ├── cli.py
+│   ├── config
+│   ├── generators
+│   └── utils
+├── docgen_cli.egg-info
+│   ├── PKG-INFO
+│   ├── SOURCES.txt
+│   ├── dependency_links.txt
+│   ├── entry_points.txt
+│   ├── requires.txt
+│   └── top_level.txt
+├── folder_tree.txt
+├── pyproject.toml
+├── setup.py
+├── tests
+│   ├── __init__.py
+│   ├── test_analyzer.py
+│   ├── test_cli.py
+│   ├── test_config.py
+│   ├── test_generator.py
+│   └── test_git_utils.py
+└── venv
+    ├── bin
+    ├── include
+    ├── lib
+    └── pyvenv.cfg
+
+12 directories, 19 files

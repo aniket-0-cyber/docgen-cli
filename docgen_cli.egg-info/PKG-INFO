@@ -1,0 +1,40 @@
+Metadata-Version: 2.1
+Name: docgen-cli
+Version: 0.1.0
+Summary: Automated documentation generator for developers
+Home-page: https://github.com/yourusername/docgen-cli
+Author: Your Name
+Author-email: your.email@example.com
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Topic :: Software Development :: Documentation
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: typer>=0.9.0
+Requires-Dist: rich>=13.3.5
+Requires-Dist: gitpython>=3.1.31
+Requires-Dist: esprima>=4.0.1
+Requires-Dist: javalang>=0.13.0
+Requires-Dist: google-generativeai>=0.3.0
+
+# DocGen
+
+A flexible documentation generator that automatically creates documentation from your Python codebase.
+
+## Features
+
+- Automatic Python code analysis
+- Git integration for tracking code history
+- Markdown documentation generation
+- Command-line interface
+- Extensible architecture
+
+## Installation
+
+```bash
+pip install docgen 
