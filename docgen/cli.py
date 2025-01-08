@@ -5,7 +5,7 @@ warnings.filterwarnings('ignore', category=Warning)
 import typer
 from rich.console import Console
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, List
 import glob
 from docgen.config.config_handler import ConfigHandler
 from docgen.analyzers.code_analyzer import CodeAnalyzer
@@ -14,6 +14,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import time
 import asyncio
+from docgen.utils.git_utils import GitAnalyzer
 
 app = typer.Typer(help="DocGen CLI - Automated Documentation Generator")
 console = Console()
@@ -292,6 +293,176 @@ def clean_cache():
     except Exception as e:
         console.print(f"[red]Error cleaning cache: {str(e)}[/red]")
         raise typer.Exit(1)
+
+@app.command(name="update", help="Update documentation for changed files")
+def update_docs(
+    output_dir: Optional[Path] = typer.Option(None, "--output-dir", "-o", help="Output directory for documentation"),
+    output_format: str = typer.Option("markdown", help="Output format (markdown/html)"),
+    full_update: bool = typer.Option(False, "--full", "-f", help="Update entire documentation for changed files"),
+):
+    """Update documentation for changed files since last documentation generation."""
+    asyncio.run(_update_docs_async(output_dir, output_format, full_update))
+
+async def _update_docs_async(output_dir: Optional[Path], output_format: str, full_update: bool):
+    try:
+        # Ensure we're working with absolute paths
+        base_path = Path.cwd().resolve()
+        output_dir = output_dir.resolve() if output_dir else base_path
+        
+        git_analyzer = GitAnalyzer()
+        changed_files = git_analyzer.get_changed_files()
+        
+        if not changed_files:
+            console.print("[yellow]No changes detected[/yellow]")
+            return
+        
+        # Convert all paths to be relative to the base path
+        changed_files = [
+            f if f.is_absolute() else base_path / f
+            for f in changed_files
+        ]
+        
+        # Filter for supported file types and existing files
+        extensions = ['.py', '.js', '.java', '.md']  # Add your supported extensions
+        files_to_process = [
+            f for f in changed_files 
+            if f.suffix in extensions 
+            and f.exists() 
+            and f.resolve().is_relative_to(base_path)
+        ]
+        
+        if not files_to_process:
+            console.print("[yellow]No supported files changed[/yellow]")
+            return
+        
+        console.print(f"[green]Processing {len(files_to_process)} changed files[/green]")
+        
+        # Process changed files
+        files_data = []
+        for file_path in files_to_process:
+            try:
+                abs_path = file_path.resolve()
+                analyzer = CodeAnalyzer(abs_path)
+                analysis_result = analyzer.analyze_file()
+                source_code = abs_path.read_text()
+                rel_path = abs_path.relative_to(base_path)
+                files_data.append((rel_path, analysis_result, source_code))
+            except Exception as e:
+                console.print(f"[yellow]Warning: Could not analyze {file_path}: {str(e)}[/yellow]")
+        
+        # Generate documentation
+        ai_generator = AIDocGenerator()
+        docs_results = await ai_generator.generate_documentation_batch(files_data)
+        
+        # Update documentation file
+        doc_file = (output_dir / "codebase_documentation.md").resolve()
+        if doc_file.exists():
+            if full_update:
+                update_existing_documentation(doc_file, docs_results, files_to_process)
+                console.print(f"[green]Updated full documentation for {len(files_to_process)} files[/green]")
+            else:
+                add_incremental_update(doc_file, docs_results, files_to_process)
+                console.print(f"[green]Added documentation updates for {len(files_to_process)} files[/green]")
+        else:
+            console.print("[yellow]No existing documentation found, generating new...[/yellow]")
+            await _generate_async(None, False, output_dir, output_format)
+        
+        # Update last documented state
+        git_analyzer.update_last_documented_state()
+        
+    except Exception as e:
+        console.print(f"[red]Error updating documentation: {str(e)}[/red]")
+        raise typer.Exit(1)
+
+def update_existing_documentation(doc_file: Path, docs_results: Dict[Path, str], changed_files: List[Path]):
+    """Update existing documentation file with changes."""
+    try:
+        content = doc_file.read_text()
+        lines = content.split('\n')
+        
+        # Add updates section at the top if it doesn't exist
+        if not any(line.startswith('## Recent Updates') for line in lines[:10]):
+            update_section = [
+                "## Recent Updates",
+                f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n",
+                "### Changed Files",
+            ]
+            lines = update_section + lines
+        
+        # Update the changes section
+        update_index = lines.index("## Recent Updates")
+        date_line = f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        changed_files_list = "\n".join(f"- {f.relative_to(Path.cwd())}" for f in changed_files)
+        
+        # Insert updates
+        lines[update_index + 1] = date_line
+        lines[update_index + 2] = "### Changed Files"
+        lines.insert(update_index + 3, changed_files_list)
+        
+        # Update individual file sections
+        for file_path, new_doc in docs_results.items():
+            rel_path = file_path.as_posix()
+            file_header = f"## {rel_path}"
+            try:
+                file_start = next(i for i, line in enumerate(lines) if line.strip() == file_header)
+                file_end = next((i for i, line in enumerate(lines[file_start + 1:], file_start + 1) 
+                                 if line.startswith('## ') or line.startswith('---')), len(lines))
+                
+                # Replace old documentation with new
+                lines[file_start:file_end] = [file_header, new_doc]
+            except StopIteration:
+                # File doesn't exist in documentation yet, append it
+                lines.extend(["\n", file_header, new_doc, "---"])
+        
+        # Write updated content
+        doc_file.write_text('\n'.join(lines))
+        
+    except Exception as e:
+        raise ValueError(f"Error updating documentation file: {str(e)}")
+
+def add_incremental_update(doc_file: Path, docs_results: Dict[Path, str], changed_files: List[Path]):
+    """Add an incremental update section at the top of the documentation."""
+    try:
+        content = doc_file.read_text()
+        lines = content.split('\n')
+        
+        # Create new update section
+        timestamp = datetime.now()
+        update_section = [
+            f"## Documentation Update ({timestamp.strftime('%Y-%m-%d %H:%M:%S')})",
+            "\n### Changed Files:",
+            "\n".join(f"- {f.relative_to(Path.cwd())}" for f in changed_files),
+            "\n### Updates:",
+        ]
+        
+        # Add documentation updates for each changed file
+        for file_path, new_doc in docs_results.items():
+            rel_path = file_path.as_posix()
+            update_section.extend([
+                f"\n#### {rel_path}",
+                new_doc,
+                "---"
+            ])
+        
+        # Find where to insert the update section
+        if "# Recent Updates" in lines:
+            insert_index = lines.index("# Recent Updates") + 1
+        else:
+            # Add Recent Updates header if it doesn't exist
+            lines.insert(0, "\n# Recent Updates\n")
+            insert_index = 1
+        
+        # Insert the new update section
+        lines[insert_index:insert_index] = [""] + update_section + [""]
+        
+        # Write updated content
+        doc_file.write_text('\n'.join(lines))
+        
+    except Exception as e:
+        raise ValueError(f"Error adding incremental update: {str(e)}")
+
+# Add command alias for shorter version
+app.command(name="u", help="Alias for update command")(update_docs)
 
 def main():
     app()

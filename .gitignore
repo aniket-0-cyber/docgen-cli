@@ -9,3 +9,5 @@ ENV/
 .vscode/
 *.log
 .docgen/
+.docgen_last_commit
+.docgen_last_commit.json
