@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 import glob
 from docgen.config.config_handler import ConfigHandler
-from docgen.analyzers.python_analyzer import PythonAnalyzer
+from docgen.analyzers.code_analyzer import CodeAnalyzer
 from docgen.generators.ai_doc_generator import AIDocGenerator
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
@@ -15,21 +15,17 @@ import asyncio
 app = typer.Typer(help="DocGen CLI - Automated Documentation Generator")
 console = Console()
 
-def process_python_file(path: Path, output_format: str, output_dir: Optional[Path] = None) -> None:
-    """Process a single Python file and generate documentation."""
+def process_file(path: Path, output_format: str, output_dir: Optional[Path] = None) -> None:
+    """Process any source code file and generate documentation."""
     try:
-        # Read source code
-        source_code = path.read_text()
-        
-        # Analyze code
-        analyzer = PythonAnalyzer(path)
+        analyzer = CodeAnalyzer(path)
         analysis_result = analyzer.analyze_file()
         
         # Generate AI documentation
         ai_generator = AIDocGenerator()
         documentation = ai_generator.generate_documentation(
             analysis_result=analysis_result,
-            source_code=source_code
+            source_code=analysis_result["source_code"]
         )
         
         # Save documentation
@@ -85,7 +81,7 @@ async def _generate_async(
             if not path.exists():
                 console.print(f"[red]Error: File not found: {path}[/red]")
                 raise typer.Exit(1)
-            process_python_file(path, output_format, output_dir)
+            process_file(path, output_format, output_dir)
             return
 
         # Directory mode (current dir or full codebase)
@@ -115,7 +111,7 @@ async def _generate_async(
                     
                     total_size += file_size
                     source_code = file_path.read_text()
-                    analyzer = PythonAnalyzer(file_path)
+                    analyzer = CodeAnalyzer(file_path)
                     analysis_result = analyzer.analyze_file()
                     files_data.append((file_path, analysis_result, source_code))
                 except Exception as e:
@@ -188,17 +184,16 @@ def analyze(
         config_handler.set("recursive", recursive)
         
         if path.is_file():
-            if path.suffix == '.py':
-                process_python_file(path, output_format)
-            else:
-                console.print(f"[yellow]Skipping non-Python file: {path}[/yellow]")
+            process_file(path, output_format)
         else:
-            pattern = f"**/*.py" if recursive else "*.py"
-            python_files = glob.glob(str(path / pattern), recursive=recursive)
+            analyzer = CodeAnalyzer(Path())  # Temporary instance to get extensions
+            extensions = analyzer.get_language_extensions()
+            pattern = f"**/*{{{','.join(extensions)}}}" if recursive else f"*{{{','.join(extensions)}}}"
+            files = glob.glob(str(path / pattern), recursive=recursive)
             
             with console.status("[bold green]Processing files...") as status:
-                for file_path in python_files:
-                    process_python_file(Path(file_path), output_format)
+                for file_path in files:
+                    process_file(Path(file_path), output_format)
                     
         console.print("[green]Documentation generation completed![/green]")
 
