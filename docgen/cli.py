@@ -1,4 +1,7 @@
 # docgen/cli.py
+import warnings
+warnings.filterwarnings('ignore', category=Warning)
+
 import typer
 from rich.console import Console
 from pathlib import Path
@@ -77,31 +80,44 @@ async def _generate_async(
         start_time = time.time()
         base_path = Path.cwd()
         
+        # Get supported extensions first
+        extensions = [
+            '.py', '.js', '.ts', '.tsx', '.jsx', '.java', '.cpp', '.c',
+            '.go', '.rs', '.php', '.rb', '.swift',
+            '.kt', '.cs', '.scala', '.r', '.m'
+        ]
+
         if path:  # Single file mode
             if not path.exists():
                 console.print(f"[red]Error: File not found: {path}[/red]")
+                raise typer.Exit(1)
+            if not path.is_file():
+                console.print(f"[red]Error: Path is not a file: {path}[/red]")
                 raise typer.Exit(1)
             process_file(path, output_format, output_dir)
             return
 
         # Directory mode (current dir or full codebase)
-        pattern = "*.py"
         if current_dir:
-            python_files = list(base_path.glob(pattern))
+            files = []
+            for ext in extensions:
+                files.extend(list(base_path.glob(f"*{ext}")))
         else:
-            python_files = list(base_path.rglob(pattern))
+            files = []
+            for ext in extensions:
+                files.extend(list(base_path.rglob(f"*{ext}")))
 
-        python_files = [f for f in python_files if should_process_file(f, base_path)]
+        source_files = [f for f in files if should_process_file(f, base_path)]
         
-        if not python_files:
-            console.print("[yellow]No Python files found to process[/yellow]")
+        if not source_files:
+            console.print("[yellow]No source code files found to process[/yellow]")
             raise typer.Exit(1)
 
         # Prepare batch processing data
         files_data = []
         total_size = 0
         with console.status("[bold green]Analyzing files...") as status:
-            for file_path in python_files:
+            for file_path in source_files:
                 try:
                     # Skip large files
                     file_size = file_path.stat().st_size
@@ -135,12 +151,12 @@ async def _generate_async(
         ])
 
         # Add table of contents
-        for file_path in sorted(python_files):
+        for file_path in sorted(source_files):
             rel_path = file_path.relative_to(base_path)
             combined_docs.append(f"- [{rel_path}](#{rel_path.as_posix().replace('/', '-')})\n")
 
         # Add file documentation
-        for file_path in sorted(python_files):
+        for file_path in sorted(source_files):
             rel_path = file_path.relative_to(base_path)
             anchor = rel_path.as_posix().replace('/', '-')
             combined_docs.extend([
@@ -156,7 +172,7 @@ async def _generate_async(
         elapsed_time = time.time() - start_time
         console.print(f"[green]Documentation generated: {output_path}[/green]")
         console.print(f"[blue]Time taken: {elapsed_time:.2f} seconds[/blue]")
-        console.print(f"[blue]Processed {len(files_data)} files ({total_size/1024:.1f} KB)[/blue]")
+        console.print(f"[blue]Processed {len(files_data)} source files ({total_size/1024:.1f} KB)[/blue]")
 
     except Exception as e:
         console.print(f"[red]Error generating documentation: {str(e)}[/red]")
