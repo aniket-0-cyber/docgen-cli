@@ -18,18 +18,21 @@ import asyncio
 app = typer.Typer(help="DocGen CLI - Automated Documentation Generator")
 console = Console()
 
-def process_file(path: Path, output_format: str, output_dir: Optional[Path] = None) -> None:
+async def process_file(path: Path, output_format: str, output_dir: Optional[Path] = None) -> None:
     """Process any source code file and generate documentation."""
     try:
         analyzer = CodeAnalyzer(path)
         analysis_result = analyzer.analyze_file()
+        source_code = path.read_text()
         
         # Generate AI documentation
         ai_generator = AIDocGenerator()
-        documentation = ai_generator.generate_documentation(
-            analysis_result=analysis_result,
-            source_code=analysis_result["source_code"]
-        )
+        documentation = await ai_generator.generate_documentation_batch([
+            (path, analysis_result, source_code)
+        ])
+        
+        # Get the documentation for the single file
+        doc_content = documentation.get(path, "Error: Documentation generation failed")
         
         # Save documentation
         if output_dir:
@@ -37,7 +40,7 @@ def process_file(path: Path, output_format: str, output_dir: Optional[Path] = No
         else:
             output_path = path.with_suffix('.md')
             
-        output_path.write_text(documentation)
+        output_path.write_text(doc_content)
         console.print(f"[green]Generated AI documentation for {path} -> {output_path}[/green]")
         
     except Exception as e:
@@ -94,7 +97,7 @@ async def _generate_async(
             if not path.is_file():
                 console.print(f"[red]Error: Path is not a file: {path}[/red]")
                 raise typer.Exit(1)
-            process_file(path, output_format, output_dir)
+            await process_file(path, output_format, output_dir)
             return
 
         # Directory mode (current dir or full codebase)
