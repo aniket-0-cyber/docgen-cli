@@ -47,21 +47,16 @@ class AIDocGenerator:
         self._cache_hits = 0
         self._api_calls = 0
 
-    def _create_prompt(self, analysis: Dict, code: str) -> str:
-        """Create an optimized prompt for the AI model."""
-        # Extract key information
-        classes = [c['name'] for c in analysis.get('classes', [])]
-        functions = [f['name'] for f in analysis.get('functions', [])]
-        imports = analysis.get('imports', [])
+    def _create_prompt(self, code: str) -> str:
+        """Create a language-agnostic prompt for the AI model."""
+        return f"""
+        Create technical documentation for this code:
 
-        # Create focused prompt
-        prompt = f"""
-        Create brief technical documentation for this code:
-
-        CODE SUMMARY:
+        CODE:
         ```
         {code}
         ```
+        
         Please provide:
         1. Brief purpose/overview (1-2 sentences)
         2. Key functionality (bullet points)
@@ -70,7 +65,6 @@ class AIDocGenerator:
 
         Format in markdown, be concise and technical.
         """
-        return prompt
 
     @sleep_and_retry
     @limits(calls=14, period=60)
@@ -79,7 +73,7 @@ class AIDocGenerator:
         retries = 0
         while retries < self.MAX_RETRIES:
             try:
-                prompt = self._create_prompt(analysis, code)
+                prompt = self._create_prompt(code)
                 response = self.model.generate_content(prompt)
                 if not response.text:
                     raise ValueError("Empty response from AI model")
