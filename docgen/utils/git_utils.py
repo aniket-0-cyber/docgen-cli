@@ -1,120 +1,81 @@
 # docgen/utils/git_utils.py
+from rich.console import Console
 from git import Repo
 from pathlib import Path
-from typing import Dict, Optional
-import re
+from typing import Dict, List, Optional
+import json
+from datetime import datetime
+
+console = Console()
 
 class GitAnalyzer:
-    def __init__(self, repo_path: Optional[Path] = None):
-        """
-        Initialize GitAnalyzer with repository path.
-        If no path is provided, assumes current directory.
-        """
-        self.repo_path = repo_path or Path.cwd()
-        self.repo = Repo(self.repo_path)
-
-    def get_pr_changes(self, pr_number: int) -> Dict:
-        """
-        Get changes introduced in a specific PR.
-        """
+    def __init__(self):
         try:
-            pr_branch = f"pull/{pr_number}/head"
-            base_branch = self.repo.active_branch.name
-            diff_index = self.repo.index.diff(pr_branch)
-            return self._analyze_diff(diff_index)
-        except Exception as e:
-            raise ValueError(f"Error analyzing PR #{pr_number}: {str(e)}")
-
-    def _analyze_diff(self, diff_index) -> Dict:
-        """
-        Analyze git diff and categorize changes.
-        """
-        changes = {
-            "added_files": [],
-            "modified_files": [],
-            "deleted_files": [],
-            "changes_by_type": {},
-            "stats": {
-                "total_additions": 0,
-                "total_deletions": 0,
-                "files_changed": 0
-            }
-        }
-
-        for diff in diff_index:
-            file_path = diff.a_path or diff.b_path
-            file_type = Path(file_path).suffix
-
-            if diff.new_file:
-                changes["added_files"].append(file_path)
-            elif diff.deleted_file:
-                changes["deleted_files"].append(file_path)
-            else:
-                changes["modified_files"].append(file_path)
-
-            if file_type not in changes["changes_by_type"]:
-                changes["changes_by_type"][file_type] = {
-                    "files": [],
-                    "additions": 0,
-                    "deletions": 0
-                }
-            
-            changes["changes_by_type"][file_type]["files"].append(file_path)
-            patch_stats = self._analyze_patch(diff.diff.decode('utf-8'))
-            changes["stats"]["total_additions"] += patch_stats["additions"]
-            changes["stats"]["total_deletions"] += patch_stats["deletions"]
-            changes["changes_by_type"][file_type]["additions"] += patch_stats["additions"]
-            changes["changes_by_type"][file_type]["deletions"] += patch_stats["deletions"]
-
-        changes["stats"]["files_changed"] = (
-            len(changes["modified_files"]) +
-            len(changes["added_files"]) +
-            len(changes["deleted_files"])
-        )
-
-        return changes
-
-    def _analyze_patch(self, patch: str) -> Dict:
-        """
-        Analyze a git patch to count additions and deletions.
-        """
-        additions = len(re.findall(r'^\+[^+]', patch, re.MULTILINE))
-        deletions = len(re.findall(r'^-[^-]', patch, re.MULTILINE))
-        return {"additions": additions, "deletions": deletions}
-
-    def generate_pr_summary(self, pr_number: int) -> str:
-        """
-        Generate a human-readable summary of PR changes.
-        """
-        changes = self.get_pr_changes(pr_number)
+            self.repo = Repo(".")
+        except Exception:
+            raise ValueError("Not a git repository")
         
-        summary_parts = [
-            f"# Pull Request #{pr_number} Summary\n",
-            "## Overview\n",
-            f"- Files changed: {changes['stats']['files_changed']}",
-            f"- Additions: {changes['stats']['total_additions']}",
-            f"- Deletions: {changes['stats']['total_deletions']}\n",
-        ]
+        # Create .docgen directory if it doesn't exist
+        self.docgen_dir = Path(".docgen")
+        self.docgen_dir.mkdir(exist_ok=True)
+        self.last_doc_state_file = self.docgen_dir / "last_state.json"
 
-        if changes["added_files"]:
-            summary_parts.extend([
-                "## Added Files",
-                *[f"- {file}" for file in sorted(changes["added_files"])],
-                ""
-            ])
+    def get_changed_files(self) -> List[Path]:
+        """Get files changed since last documentation update."""
+        try:
+            console.print("[blue]Checking for changed files...[/blue]")
+            
+            changed = []
+            
+            # Get unstaged changes
+            for item in self.repo.index.diff(None):
+                if item.a_path:
+                    changed.append(Path(item.a_path))
+                if item.b_path and item.b_path != item.a_path:
+                    changed.append(Path(item.b_path))
+            
+            # Get staged changes
+            for item in self.repo.index.diff('HEAD'):
+                if item.a_path:
+                    changed.append(Path(item.a_path))
+                if item.b_path and item.b_path != item.a_path:
+                    changed.append(Path(item.b_path))
+            
+            # Get untracked files that are not ignored
+            untracked = [
+                Path(f) for f in self.repo.untracked_files
+                if not any(p in str(f) for p in ['.docgen', '__pycache__', '.git'])
+            ]
+            changed.extend(untracked)
+            
+            # Remove duplicates and sort
+            changed = sorted(set(changed))
+            
+            console.print(f"[blue]Found changes:[/blue]")
+            console.print(f"- Unstaged/staged changes: {len(changed) - len(untracked)}")
+            console.print(f"- New untracked files: {len(untracked)}")
+            
+            if changed:
+                console.print("\n[blue]Changed files:[/blue]")
+                for file in changed:
+                    console.print(f"- {file}")
+            
+            return changed
+            
+        except Exception as e:
+            console.print(f"[red]Error getting changed files: {str(e)}[/red]")
+            return []
 
-        if changes["modified_files"]:
-            summary_parts.extend([
-                "## Modified Files",
-                *[f"- {file}" for file in sorted(changes["modified_files"])],
-                ""
-            ])
-
-        if changes["deleted_files"]:
-            summary_parts.extend([
-                "## Deleted Files",
-                *[f"- {file}" for file in sorted(changes["deleted_files"])],
-                ""
-            ])
-
-        return "\n".join(summary_parts)
+    def update_last_documented_state(self):
+        """Update the last documented state."""
+        try:
+            current_state = {
+                'last_commit': self.repo.head.commit.hexsha,
+                'timestamp': datetime.now().isoformat(),
+                'branch': self.repo.active_branch.name
+            }
+            
+            self.last_doc_state_file.write_text(json.dumps(current_state, indent=2))
+            
+        except Exception as e:
+            console.print(f"[yellow]Warning: Could not update documentation state: {str(e)}[/yellow]")
