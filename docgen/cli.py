@@ -299,15 +299,29 @@ def update_docs(
     output_dir: Optional[Path] = typer.Option(None, "--output-dir", "-o", help="Output directory for documentation"),
     output_format: str = typer.Option("markdown", help="Output format (markdown/html)"),
     full_update: bool = typer.Option(False, "--full", "-f", help="Update entire documentation for changed files"),
+    updates_file: Optional[str] = typer.Option(None, "--updates-file", "-u", 
+        help="Store updates in a separate file (e.g., 'updates.md')")
 ):
     """Update documentation for changed files since last documentation generation."""
-    asyncio.run(_update_docs_async(output_dir, output_format, full_update))
+    asyncio.run(_update_docs_async(output_dir, output_format, full_update, updates_file))
 
-async def _update_docs_async(output_dir: Optional[Path], output_format: str, full_update: bool):
+async def _update_docs_async(
+    output_dir: Optional[Path], 
+    output_format: str, 
+    full_update: bool,
+    updates_file: Optional[str]
+):
     try:
         # Ensure we're working with absolute paths
         base_path = Path.cwd().resolve()
         output_dir = output_dir.resolve() if output_dir else base_path
+        
+        # Process updates file path
+        updates_path = None
+        if updates_file:
+            updates_path = (output_dir / updates_file).resolve()
+            if not updates_path.suffix:
+                updates_path = updates_path.with_suffix('.md')
         
         git_analyzer = GitAnalyzer()
         changed_files = git_analyzer.get_changed_files()
@@ -354,18 +368,23 @@ async def _update_docs_async(output_dir: Optional[Path], output_format: str, ful
         ai_generator = AIDocGenerator()
         docs_results = await ai_generator.generate_documentation_batch(files_data)
         
-        # Update documentation file
+        # Handle documentation updates
         doc_file = (output_dir / "codebase_documentation.md").resolve()
-        if doc_file.exists():
-            if full_update:
+        if full_update:
+            if doc_file.exists():
                 update_existing_documentation(doc_file, docs_results, files_to_process)
                 console.print(f"[green]Updated full documentation for {len(files_to_process)} files[/green]")
-            else:
-                add_incremental_update(doc_file, docs_results, files_to_process)
-                console.print(f"[green]Added documentation updates for {len(files_to_process)} files[/green]")
         else:
-            console.print("[yellow]No existing documentation found, generating new...[/yellow]")
-            await _generate_async(None, False, output_dir, output_format)
+            # Handle incremental updates
+            if updates_path:
+                add_incremental_update(updates_path, docs_results, files_to_process, create_if_missing=True)
+                console.print(f"[green]Added updates to {updates_path.name}[/green]")
+            elif doc_file.exists():
+                add_incremental_update(doc_file, docs_results, files_to_process)
+                console.print(f"[green]Added updates to main documentation[/green]")
+            else:
+                console.print("[yellow]No existing documentation found, generating new...[/yellow]")
+                await _generate_async(None, False, output_dir, output_format)
         
         # Update last documented state
         git_analyzer.update_last_documented_state()
@@ -420,12 +439,14 @@ def update_existing_documentation(doc_file: Path, docs_results: Dict[Path, str],
     except Exception as e:
         raise ValueError(f"Error updating documentation file: {str(e)}")
 
-def add_incremental_update(doc_file: Path, docs_results: Dict[Path, str], changed_files: List[Path]):
+def add_incremental_update(
+    doc_file: Path, 
+    docs_results: Dict[Path, str], 
+    changed_files: List[Path],
+    create_if_missing: bool = False
+):
     """Add an incremental update section at the top of the documentation."""
     try:
-        content = doc_file.read_text()
-        lines = content.split('\n')
-        
         # Create new update section
         timestamp = datetime.now()
         update_section = [
@@ -444,19 +465,38 @@ def add_incremental_update(doc_file: Path, docs_results: Dict[Path, str], change
                 "---"
             ])
         
-        # Find where to insert the update section
-        if "# Recent Updates" in lines:
-            insert_index = lines.index("# Recent Updates") + 1
+        # Handle existing or new file
+        if doc_file.exists():
+            lines = doc_file.read_text().split('\n')
+            
+            # Find where to insert the update section
+            if "# Recent Updates" in lines:
+                insert_index = lines.index("# Recent Updates") + 1
+            else:
+                # Add Recent Updates header if it doesn't exist
+                lines.insert(0, "\n# Recent Updates\n")
+                insert_index = 1
+            
+            # Insert the new update section
+            lines[insert_index:insert_index] = [""] + update_section + [""]
+            content = '\n'.join(lines)
+            
+        elif create_if_missing:
+            # Create new file with header and update
+            content = "\n".join([
+                "# Documentation Updates\n",
+                f"Generated for: {Path.cwd().name}",
+                f"First update: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}\n",
+                "# Recent Updates\n"
+            ] + update_section)
         else:
-            # Add Recent Updates header if it doesn't exist
-            lines.insert(0, "\n# Recent Updates\n")
-            insert_index = 1
+            raise FileNotFoundError(f"Documentation file not found: {doc_file}")
         
-        # Insert the new update section
-        lines[insert_index:insert_index] = [""] + update_section + [""]
+        # Ensure parent directory exists
+        doc_file.parent.mkdir(parents=True, exist_ok=True)
         
         # Write updated content
-        doc_file.write_text('\n'.join(lines))
+        doc_file.write_text(content)
         
     except Exception as e:
         raise ValueError(f"Error adding incremental update: {str(e)}")
