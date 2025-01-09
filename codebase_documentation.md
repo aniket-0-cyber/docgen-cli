@@ -1,3 +1,130 @@
+
+# Recent Updates
+
+
+## Documentation Update (2025-01-09 13:41:39)
+
+### Changed Files:
+- docgen/cli.py
+- docgen/generators/ai_doc_generator.py
+- docgen/utils/git_utils.py
+
+### Updates:
+
+#### docgen/cli.py
+# DocGen CLI Update: Incremental Documentation Updates
+
+This update introduces the ability to generate incremental documentation updates using Git version control.
+
+
+## New Features:
+
+* **`update` command:**  This command now allows for generating updates to existing documentation, either as a full re-generation or incremental updates stored in a separate file.
+* **Incremental Updates:** The `update` command (and its alias `u`) can now generate documentation updates showing only changes since the last documentation generation, leveraging Git history.  These updates can be appended to an existing documentation file or saved into a separate file specified by `--updates-file`.
+* **Full Update Option:**  A `--full` flag has been added to the `update` command to force a full regeneration of the documentation for all changed files.
+* **`update_existing_documentation` function:** Added to handle full updates within the existing documentation file, adding a "Recent Updates" section if it doesn't exist.
+* **`add_incremental_update` function:**  Handles the creation and appending of incremental updates to either an existing documentation file or a newly created one (if `--updates-file` is specified).
+
+
+## Key Functionality Changes:
+
+* The `update` command uses `GitAnalyzer` to identify changed files and their content differences.
+* The `AIDocGenerator` now includes an `async generate_update_documentation` method to efficiently generate documentation for code changes.
+* Large files (>2MB) are skipped during both generation and update.
+* Improved error handling and informative console output during update process.
+
+
+## Usage Example:
+
+To generate incremental updates to an existing `codebase_documentation.md` file:
+
+```bash
+docgen update
+```
+
+To generate incremental updates and store them in a separate file named `updates.md`:
+
+```bash
+docgen update --updates-file updates.md 
+```
+
+To perform a full update of the documentation:
+
+```bash
+docgen update --full
+```
+
+
+## Important Notes:
+
+* This update requires Git to be installed and configured within the project directory.  The `GitAnalyzer` relies on Git's functionality to detect changes.
+*  The `update` command assumes the existence of a file named "codebase_documentation.md" unless the `--updates-file` option is used. If this file doesn't exist and a full update is not requested,  the command will generate a new file.
+* Error messages during analysis are now presented as warnings, allowing the process to continue.
+*  The `update` command now ensures the use of absolute file paths.
+
+---
+
+#### docgen/generators/ai_doc_generator.py
+## Documentation Update: AIDocGenerator
+
+This update introduces a new method for generating documentation updates based on code changes.
+
+
+### New Method: `generate_update_documentation`
+
+This asynchronous method takes the original code and the changes as input and returns updated documentation focusing only on the changes and their impact.
+
+**Signature:**
+
+```python
+async def generate_update_documentation(self, code: str, changes: str) -> str:
+```
+
+**Parameters:**
+
+* `code` (str): The original code snippet.
+* `changes` (str): A diff showing the code changes (+ for additions, - for deletions).
+
+**Returns:**
+
+* `str`: Updated documentation in markdown format, highlighting only the changes and their impact.  Returns "No significant code changes detected." if no changes are provided.
+
+**Functionality:**
+
+The method constructs a specific prompt for the AI model, tailored to generating focused documentation updates. The prompt includes the original code, the changes, and instructions to focus only on the changes and their impact. The model's response is then returned.  Error handling is implemented to manage potential issues during the AI call.  Rate limiting and retry mechanisms are the same as other AI calls.
+
+
+**Impact:**
+
+This addition enhances the functionality of the `AIDocGenerator` class by enabling the generation of more targeted and efficient documentation updates, reducing the need to regenerate complete documentation for minor code modifications.  The prompt is explicitly designed to guide the AI towards concise and focused updates.
+
+---
+
+#### docgen/utils/git_utils.py
+## Documentation Update for `git_utils.py`
+
+**Changes:**
+
+* **Improved `get_changed_files` function:** This function now more accurately identifies changed files by differentiating between unstaged, staged, and untracked files.  The unified diff generation is enhanced to better represent file changes.  Error handling is improved to include exception type in error messages.
+
+* **No functional changes to `update_last_documented_state` function:** This function remains unchanged in its logic.
+
+**Impact:**
+
+* More comprehensive identification of file changes, including better handling of untracked files.
+* Improved accuracy of the generated diffs.
+* Enhanced error reporting in `get_changed_files` providing greater diagnostic information.
+
+
+**No changes to key functionality or usage examples needed.**
+
+**Important Notes:**
+
+* The improved error handling in `get_changed_files` provides more detailed error information for debugging purposes.
+* The `get_changed_files` function now provides a more comprehensive representation of changes in a Git repository, including detailed diffs for modified files and a clear representation of new files.
+
+---
+
 # Codebase Documentation
 
 Generated on: 2025-01-08 05:09:07

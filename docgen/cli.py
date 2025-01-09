@@ -165,7 +165,7 @@ async def _generate_async(
                 try:
                     # Skip large files
                     file_size = file_path.stat().st_size
-                    if file_size > 1_000_000:  # Skip files larger than 1MB
+                    if file_size > 2_000_000:  # Skip files larger than 2MB
                         console.print(f"[yellow]Skipping large file: {file_path}[/yellow]")
                         continue
                     
@@ -370,57 +370,48 @@ async def _update_docs_async(
             console.print("[yellow]No changes detected[/yellow]")
             return
         
-        # Convert all paths to be relative to the base path
-        changed_files = [
-            f if f.is_absolute() else base_path / f
-            for f in changed_files
-        ]
-        
-        # Filter for supported file types and existing files
-        extensions = ['.py', '.js', '.java', '.md']  # Add your supported extensions
-        files_to_process = [
-            f for f in changed_files 
-            if f.suffix in extensions 
-            and f.exists() 
-            and f.resolve().is_relative_to(base_path)
-        ]
-        
-        if not files_to_process:
-            console.print("[yellow]No supported files changed[/yellow]")
-            return
-        
-        console.print(f"[green]Processing {len(files_to_process)} changed files[/green]")
-        
-        # Process changed files
+        # Process changed files with their specific changes
         files_data = []
-        for file_path in files_to_process:
+        for file_path, change_info in changed_files.items():
             try:
-                abs_path = file_path.resolve()
-                analyzer = CodeAnalyzer(abs_path)
-                analysis_result = analyzer.analyze_file()
-                source_code = abs_path.read_text()
-                rel_path = abs_path.relative_to(base_path)
-                files_data.append((rel_path, analysis_result, source_code))
+                if file_path.exists():
+                    abs_path = file_path.resolve()
+                    analyzer = CodeAnalyzer(abs_path)
+                    analysis_result = analyzer.analyze_file()
+                    rel_path = abs_path.relative_to(base_path)
+                    files_data.append((
+                        rel_path,
+                        analysis_result,
+                        change_info['full_code'],  # Full current code
+                        change_info['changes']     # Actual changes
+                    ))
             except Exception as e:
                 console.print(f"[yellow]Warning: Could not analyze {file_path}: {str(e)}[/yellow]")
         
         # Generate documentation
         ai_generator = AIDocGenerator()
-        docs_results = await ai_generator.generate_documentation_batch(files_data)
+        docs_results = {}
+        
+        for file_path, analysis, code, changes in files_data:
+            try:
+                doc = await ai_generator.generate_update_documentation(code, changes)
+                docs_results[file_path] = doc
+            except Exception as e:
+                console.print(f"[yellow]Warning: Could not generate update for {file_path}: {str(e)}[/yellow]")
         
         # Handle documentation updates
         doc_file = (output_dir / "codebase_documentation.md").resolve()
         if full_update:
             if doc_file.exists():
-                update_existing_documentation(doc_file, docs_results, files_to_process)
-                console.print(f"[green]Updated full documentation for {len(files_to_process)} files[/green]")
+                update_existing_documentation(doc_file, docs_results, files_data)
+                console.print(f"[green]Updated full documentation for {len(files_data)} files[/green]")
         else:
             # Handle incremental updates
             if updates_path:
-                add_incremental_update(updates_path, docs_results, files_to_process, create_if_missing=True)
+                add_incremental_update(updates_path, docs_results, files_data, create_if_missing=True)
                 console.print(f"[green]Added updates to {updates_path.name}[/green]")
             elif doc_file.exists():
-                add_incremental_update(doc_file, docs_results, files_to_process)
+                add_incremental_update(doc_file, docs_results, files_data)
                 console.print(f"[green]Added updates to main documentation[/green]")
             else:
                 console.print("[yellow]No existing documentation found, generating new...[/yellow]")
@@ -482,7 +473,7 @@ def update_existing_documentation(doc_file: Path, docs_results: Dict[Path, str],
 def add_incremental_update(
     doc_file: Path, 
     docs_results: Dict[Path, str], 
-    changed_files: List[Path],
+    changed_files: List[tuple],
     create_if_missing: bool = False
 ):
     """Add an incremental update section at the top of the documentation."""
@@ -492,15 +483,14 @@ def add_incremental_update(
         update_section = [
             f"## Documentation Update ({timestamp.strftime('%Y-%m-%d %H:%M:%S')})",
             "\n### Changed Files:",
-            "\n".join(f"- {f.relative_to(Path.cwd())}" for f in changed_files),
+            "\n".join(f"- {f[0]}" for f in changed_files),
             "\n### Updates:",
         ]
         
         # Add documentation updates for each changed file
         for file_path, new_doc in docs_results.items():
-            rel_path = file_path.as_posix()
             update_section.extend([
-                f"\n#### {rel_path}",
+                f"\n#### {file_path}",
                 new_doc,
                 "---"
             ])
