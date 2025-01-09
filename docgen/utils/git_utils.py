@@ -1,4 +1,5 @@
 # docgen/utils/git_utils.py
+from docgen.utils.extension import SUPPORTED_EXTENSIONS
 from rich.console import Console
 from git import Repo
 from pathlib import Path
@@ -26,70 +27,78 @@ class GitAnalyzer:
             console.print("[blue]Checking for changed files...[/blue]")
             changed = {}
             
-            # Get unstaged changes
-            for diff in self.repo.head.commit.diff(None):
-                if diff.a_path:
-                    path = Path(diff.a_path)
-                    # Get both old and new versions of the file
-                    old_content = diff.a_blob.data_stream.read().decode('utf-8') if diff.a_blob else ''
-                    new_content = path.read_text() if path.exists() else ''
-                    
-                    # Create a unified diff
-                    changes = f"--- {diff.a_path}\n+++ {diff.b_path}\n"
-                    changes += ''.join(
-                        f"{line}\n" for line in new_content.split('\n')
-                        if line.strip()
-                    )
-                    
-                    changed[path] = {
-                        'type': 'modified',
-                        'changes': changes,
-                        'full_code': new_content
-                    }
+            # Get all changes at once using git diff-index
+            diff_index = self.repo.head.commit.diff(None, create_patch=True)
             
-            # Get staged changes
-            for diff in self.repo.index.diff('HEAD'):
-                if diff.a_path:
-                    path = Path(diff.a_path)
-                    if path not in changed:  # Don't override unstaged changes
-                        # Get both versions
-                        old_content = diff.a_blob.data_stream.read().decode('utf-8') if diff.a_blob else ''
-                        new_content = self.repo.index.blob(diff.b_path).data_stream.read().decode('utf-8') if diff.b_path else ''
-                        
-                        # Create a unified diff
-                        changes = f"--- {diff.a_path}\n+++ {diff.b_path}\n"
-                        changes += ''.join(
-                            f"{line}\n" for line in new_content.split('\n')
-                            if line.strip()
-                        )
-                        
+            # Process all changes in a single pass
+            for diff in diff_index:
+                if not diff.a_path:
+                    continue
+                    
+                path = Path(diff.a_path)
+                
+                # Skip non-supported files
+                if path.suffix not in SUPPORTED_EXTENSIONS:
+                    continue
+                
+                try:
+                    # Get patch directly from diff object
+                    patch = ''
+                    if hasattr(diff, 'diff'):
+                        try:
+                            patch = diff.diff.decode('utf-8')
+                        except (AttributeError, UnicodeDecodeError):
+                            pass
+                    
+                    # Only read the file if it exists
+                    if path.exists():
+                        try:
+                            with open(path, 'r', encoding='utf-8') as f:
+                                new_content = f.read()
+                        except UnicodeDecodeError:
+                            continue
+                    else:
+                        new_content = ''
+                    
+                    # Only add files that have actual changes or content
+                    if patch or new_content:
                         changed[path] = {
                             'type': 'modified',
-                            'changes': changes,
+                            'changes': patch,
                             'full_code': new_content
                         }
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Skipping {path} due to error: {str(e)}[/yellow]")
+                    continue
             
-            # Get untracked files
-            untracked = [
-                Path(f) for f in self.repo.untracked_files
-                if not any(p in str(f) for p in ['.docgen', '__pycache__', '.git'])
-            ]
-            
-            # Add untracked files
-            for path in untracked:
+            # Handle untracked files
+            for untracked_file in self.repo.untracked_files:
+                path = Path(untracked_file)
+                
+                # Skip non-supported and hidden files
+                if (path.suffix not in SUPPORTED_EXTENSIONS or
+                    any(p in str(path) for p in ['.docgen', '__pycache__', '.git'])):
+                    continue
+                
                 if path.exists():
-                    content = path.read_text()
-                    changed[path] = {
-                        'type': 'new',
-                        'changes': f"--- /dev/null\n+++ {path}\n{content}",
-                        'full_code': content
-                    }
+                    try:
+                        with open(path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        changed[path] = {
+                            'type': 'new',
+                            'changes': f"+++ {path}\n{content}",
+                            'full_code': content
+                        }
+                    except UnicodeDecodeError:
+                        continue
             
-            # Debug output
+            # Output results
             if changed:
-                console.print("\n[blue]Changed files:[/blue]")
+                console.print(f"\n[blue]Found {len(changed)} changed files:[/blue]")
                 for file, info in changed.items():
                     console.print(f"- {file} ({info['type']})")
+                    if info['changes']:
+                        console.print("  [green]Changes detected[/green]")
             else:
                 console.print("[yellow]No changes detected[/yellow]")
             
@@ -97,7 +106,7 @@ class GitAnalyzer:
             
         except Exception as e:
             console.print(f"[red]Error getting changed files: {str(e)}[/red]")
-            console.print(f"[red]Exception details: {type(e).__name__}[/red]")
+            console.print(f"[red]Exception type: {type(e).__name__}[/red]")
             return {}
 
     def update_last_documented_state(self):

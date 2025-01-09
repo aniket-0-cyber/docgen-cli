@@ -1,6 +1,106 @@
 
 # Recent Updates
 
+## Documentation Update (2025-01-09 14:04:52)
+
+### Changed Files:
+- docgen/analyzers/base_analyzer.py
+- docgen/analyzers/code_analyzer.py
+- docgen/utils/git_utils.py
+- docgen/utils/extension.py
+
+### Updates:
+
+#### docgen/analyzers/base_analyzer.py
+## Documentation Update: `docgen/analyzers/base_analyzer.py`
+
+**Changes:** The `get_language_extensions` abstract method has been removed from the `BaseAnalyzer` class.
+
+**Impact:**
+
+*   Language-specific analyzers no longer need to implement a method to declare supported file extensions.  The mechanism for determining which analyzer to use for a given file will need to be updated elsewhere in the codebase (this change is not reflected in the provided diff).
+
+**Key Functionality Removed:**
+
+*   The ability to directly query a `BaseAnalyzer` for its supported file extensions.
+
+
+**Important Notes:**
+
+* This change necessitates a modification to the overall analyzer selection logic. The updated logic must determine file type based on other information or methods.
+
+---
+
+#### docgen/analyzers/code_analyzer.py
+## Code Analyzer Documentation Update
+
+The following changes were made to the `CodeAnalyzer` class:
+
+**1. Removed Feature:**
+
+* The `get_language_extensions()` static method has been removed. This method previously returned a list of common programming language file extensions.
+
+**2. Impact:**
+
+* The `CodeAnalyzer` class no longer provides a built-in list of supported file extensions.  If extension-based filtering or language detection is required, this logic must now be implemented elsewhere in the application.
+
+**3. Key Functionality Change:**
+
+* The core `analyze_file()` method remains unchanged.  It still analyzes a file, reading its contents and returning a dictionary with file metadata and source code.
+
+**4. Important Notes:**
+
+*  Any code relying on the `get_language_extensions()` method will need to be updated to provide its own mechanism for identifying file types or filtering by extensions.  
+
+---
+
+#### docgen/utils/git_utils.py
+## Documentation Update: `git_utils.py` - `get_changed_files()` method
+
+**1. New or Modified Features:**
+
+* The `get_changed_files()` method has been completely rewritten for improved efficiency and error handling.
+* It now uses `git diff-index` to retrieve all changes (staged and unstaged) in a single operation, rather than iterating through staged and unstaged changes separately.  This significantly improves performance, especially in large repositories.
+* The method directly accesses the patch from the diff object, reducing redundant file reads and improving speed.
+* Enhanced handling of UnicodeDecodeError during file reading.
+* Explicit checks for file existence before attempting to read content.
+* Improved error handling with more informative console messages.
+* More robust handling of untracked files, including better filtering of hidden and unsupported files.
+* Added support for detecting new files.
+
+**2. Key Functionality:**
+
+* The core functionality remains the same: to identify files changed since the last documentation update and return a dictionary containing file paths, change types ('modified' or 'new'), patch information, and full file content.  However, the implementation is significantly improved for efficiency and robustness.
+
+**3. Simple Usage Example:**
+
+The usage remains unchanged:
+
+```python
+analyzer = GitAnalyzer()
+changed_files = analyzer.get_changed_files()
+```
+
+**4. Important Notes:**
+
+* The previous method's approach of handling staged and unstaged changes separately has been replaced by a more efficient single-pass approach using `git diff-index`.
+* The structure of the returned dictionary remains consistent, though the method of obtaining the change information is significantly different.
+* The error handling is now more comprehensive, providing more detailed information in case of errors.
+* The method now explicitly handles untracked files and better filters for hidden/unsupported files.
+
+
+---
+
+#### docgen/utils/extension.py
+## Documentation Update: `SUPPORTED_EXTENSIONS`
+
+**Changes:** No actual changes were made to the `SUPPORTED_EXTENSIONS` list itself. The provided diff shows the list's *content*, not modifications to it.  Therefore, no functional changes have occurred.  The diff likely represents a refactoring or a simple copy/paste of the existing list into the `docgen/utils/extension.py` file.
+
+**Impact:** No impact on functionality. The list of supported file extensions remains unchanged.
+
+---
+
+
 
 ## Documentation Update (2025-01-09 13:41:39)
 
