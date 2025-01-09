@@ -20,51 +20,85 @@ class GitAnalyzer:
         self.docgen_dir.mkdir(exist_ok=True)
         self.last_doc_state_file = self.docgen_dir / "last_state.json"
 
-    def get_changed_files(self) -> List[Path]:
-        """Get files changed since last documentation update."""
+    def get_changed_files(self) -> Dict[Path, Dict]:
+        """Get files changed since last documentation update with their changes."""
         try:
             console.print("[blue]Checking for changed files...[/blue]")
-            
-            changed = []
+            changed = {}
             
             # Get unstaged changes
-            for item in self.repo.index.diff(None):
-                if item.a_path:
-                    changed.append(Path(item.a_path))
-                if item.b_path and item.b_path != item.a_path:
-                    changed.append(Path(item.b_path))
+            for diff in self.repo.head.commit.diff(None):
+                if diff.a_path:
+                    path = Path(diff.a_path)
+                    # Get both old and new versions of the file
+                    old_content = diff.a_blob.data_stream.read().decode('utf-8') if diff.a_blob else ''
+                    new_content = path.read_text() if path.exists() else ''
+                    
+                    # Create a unified diff
+                    changes = f"--- {diff.a_path}\n+++ {diff.b_path}\n"
+                    changes += ''.join(
+                        f"{line}\n" for line in new_content.split('\n')
+                        if line.strip()
+                    )
+                    
+                    changed[path] = {
+                        'type': 'modified',
+                        'changes': changes,
+                        'full_code': new_content
+                    }
             
             # Get staged changes
-            for item in self.repo.index.diff('HEAD'):
-                if item.a_path:
-                    changed.append(Path(item.a_path))
-                if item.b_path and item.b_path != item.a_path:
-                    changed.append(Path(item.b_path))
+            for diff in self.repo.index.diff('HEAD'):
+                if diff.a_path:
+                    path = Path(diff.a_path)
+                    if path not in changed:  # Don't override unstaged changes
+                        # Get both versions
+                        old_content = diff.a_blob.data_stream.read().decode('utf-8') if diff.a_blob else ''
+                        new_content = self.repo.index.blob(diff.b_path).data_stream.read().decode('utf-8') if diff.b_path else ''
+                        
+                        # Create a unified diff
+                        changes = f"--- {diff.a_path}\n+++ {diff.b_path}\n"
+                        changes += ''.join(
+                            f"{line}\n" for line in new_content.split('\n')
+                            if line.strip()
+                        )
+                        
+                        changed[path] = {
+                            'type': 'modified',
+                            'changes': changes,
+                            'full_code': new_content
+                        }
             
-            # Get untracked files that are not ignored
+            # Get untracked files
             untracked = [
                 Path(f) for f in self.repo.untracked_files
                 if not any(p in str(f) for p in ['.docgen', '__pycache__', '.git'])
             ]
-            changed.extend(untracked)
             
-            # Remove duplicates and sort
-            changed = sorted(set(changed))
+            # Add untracked files
+            for path in untracked:
+                if path.exists():
+                    content = path.read_text()
+                    changed[path] = {
+                        'type': 'new',
+                        'changes': f"--- /dev/null\n+++ {path}\n{content}",
+                        'full_code': content
+                    }
             
-            console.print(f"[blue]Found changes:[/blue]")
-            console.print(f"- Unstaged/staged changes: {len(changed) - len(untracked)}")
-            console.print(f"- New untracked files: {len(untracked)}")
-            
+            # Debug output
             if changed:
                 console.print("\n[blue]Changed files:[/blue]")
-                for file in changed:
-                    console.print(f"- {file}")
+                for file, info in changed.items():
+                    console.print(f"- {file} ({info['type']})")
+            else:
+                console.print("[yellow]No changes detected[/yellow]")
             
             return changed
             
         except Exception as e:
             console.print(f"[red]Error getting changed files: {str(e)}[/red]")
-            return []
+            console.print(f"[red]Exception details: {type(e).__name__}[/red]")
+            return {}
 
     def update_last_documented_state(self):
         """Update the last documented state."""

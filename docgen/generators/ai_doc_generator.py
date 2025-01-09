@@ -58,12 +58,12 @@ class AIDocGenerator:
         ```
         
         Please provide:
-        1. Brief purpose/overview (1-2 sentences)
+        1. Brief purpose/overview (1-2 sentences max)
         2. Key functionality (bullet points)
-        3. Simple usage example (if applicable)
-        4. Important notes (if any)
+        3. Usage example (if applicable)
+        4. Important notes (only if changes are critical or important)
 
-        Format in markdown, be concise and technical.
+        Format in markdown, be short and concise and technical.
         """
 
     @sleep_and_retry
@@ -223,3 +223,42 @@ class AIDocGenerator:
         """Faster cache key generation."""
         key_content = f"{code[:100]}{str(analysis.get('classes', []))}{str(analysis.get('functions', []))}"
         return hashlib.md5(key_content.encode()).hexdigest() 
+
+    def _create_update_prompt(self, code: str, changes: str) -> str:
+        """Create a prompt specifically for updating documentation based on changes."""
+        return f"""As an expert developer, analyze these code changes and generate focused documentation updates.
+                Focus only on what has changed and its impact. Format in markdown.
+
+                Original Code Context:
+                ```
+                {code}
+                Code Changes (+ for additions, - for deletions):
+                ```
+
+                Changes made:
+                ```
+                {changes}
+                ```
+                1. Any new or modified features (bullet points)
+                2. Key functionality (bullet points, if any)
+                3. Simple usage example (if applicable)
+                4. Important notes (if any)
+
+                Format in markdown, be short and concise and technical, focusing only on the changes.
+                """ 
+    
+    @sleep_and_retry
+    @limits(calls=14, period=60)
+    async def generate_update_documentation(self, code: str, changes: str) -> str:
+        """Generate documentation specifically for code updates."""
+        try:
+            if not changes.strip():
+                return "No significant code changes detected."
+            prompt = self._create_update_prompt(code, changes)
+            response = self.model.generate_content(prompt)
+            
+            if not response or not response.text:
+                raise ValueError("Empty response from AI model")
+            return response.text
+        except Exception as e:
+            raise Exception(f"Failed to generate update documentation: {str(e)}")
