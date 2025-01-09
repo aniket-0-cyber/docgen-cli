@@ -16,7 +16,47 @@ import time
 import asyncio
 from docgen.utils.git_utils import GitAnalyzer
 
-app = typer.Typer(help="DocGen CLI - Automated Documentation Generator")
+app = typer.Typer(
+    help="""
+────────────────────────── DocGen CLI v0.1.0 ──────────────────────────
+
+Professional Documentation Generator\n
+Generate comprehensive documentation for your codebase using AI-powered analysis.\n\n
+
+Commands:\n
+  • generate (g)   Generate documentation for files or directories\n
+  • analyze        Analyze code structure and complexity\n
+  • config         Configure DocGen settings and preferences\n
+  • update (u)     Update docs for changed files (Git-aware)\n
+  • clean (c)      Remove generated documentation files\n
+  • version        Display DocGen version information\n
+  • clear-cache    Clear the documentation generation cache\n\n
+
+Quick Start:\n
+  $ docgen generate --current-dir\n
+  $ docgen g -f src/main.py\n
+  $ docgen update\n\n
+
+Examples:\n
+  # Generate docs for current directory\n
+  $ docgen generate --current-dir\n
+  
+  # Generate docs for a specific file\n
+  $ docgen g -f src/main.py\n
+  
+  # Update documentation for changed files\n
+  $ docgen update\n
+
+  # Configure output format\n
+  $ docgen config output_format html\n\n
+
+Documentation: https://github.com/yourusername/docgen-cli#readme
+""",
+    short_help="Professional AI-powered documentation generator",
+    no_args_is_help=True,
+    add_completion=False,
+)
+
 console = Console()
 
 async def process_file(path: Path, output_format: str, output_dir: Optional[Path] = None) -> None:
