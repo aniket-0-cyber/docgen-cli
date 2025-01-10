@@ -1,6 +1,170 @@
 
 # Recent Updates
 
+## Documentation Update (2025-01-10 12:04:01)
+
+### Changed Files:
+- docgen/cli.py
+- docgen/generators/ai_doc_generator.py
+
+### Updates:
+
+#### docgen/cli.py
+## DocGen CLI Update:  Documentation Generation Improvements
+
+This update focuses on enhancing the core documentation generation process and improving the handling of large codebases.
+
+**Changes:**
+
+* **Improved File Handling:** The `generate` command now leverages the `SUPPORTED_EXTENSIONS` constant to determine which files to process,  eliminating the hardcoded list of extensions. This allows for easier extensibility in supporting new file types.
+* **Large File Handling:**  The `generate` command now skips files larger than 2MB to prevent excessive processing time and potential memory issues. A warning message is displayed for each skipped file.
+* **Asynchronous Batch Processing:**  The `generate` command now uses asynchronous operations with `asyncio` to improve the speed of processing multiple files concurrently.
+* **Removal of `analyze` command:** The `analyze` command has been removed.  The code analysis functionality remains integrated into the `generate` command.
+
+**Simple Usage Example (generate command):**
+
+To generate documentation for the current directory, including files with supported extensions:
+
+```bash
+docgen generate --current-dir
+```
+
+**Important Notes:**
+
+* The removal of the standalone `analyze` command means that code analysis is now performed implicitly during documentation generation.
+* The introduction of asynchronous processing may significantly reduce the time required to generate documentation for large codebases.  However, the actual speed improvement will depend on your system's resources and the complexity of the codebase.
+* The 2MB file size limit for skipping large files can be adjusted in the source code if needed.
+
+---
+
+#### docgen/generators/ai_doc_generator.py
+## Documentation Update: `AIDocGenerator` Class
+
+The following changes were made to the `AIDocGenerator` class:
+
+### 1. Improved `_create_update_prompt` Function:
+
+* **Original Prompt:** The original prompt for generating update documentation was less specific, requesting features, functionality, examples, and notes without explicitly focusing on changes.
+
+* **Updated Prompt:** The updated `_create_update_prompt` function now provides a more precise prompt.  It explicitly instructs the AI to focus only on changes and their impact, specifying the format and desired level of detail.  The prompt now also clearly indicates what constitutes additions and deletions using the `+` and `-` symbols respectively in the diff.  The required sections are also more concise and relevant to change analysis.
+
+
+* **Impact:** This change results in more focused and relevant documentation updates, highlighting only the differences between code versions.  The AI is guided to provide more concise and technical updates focused solely on the impacted aspects.
+
+
+### 2.  `generate_update_documentation` Function:
+
+* **Change:** The method now includes error handling, ensuring that empty or null responses from the AI model are explicitly handled and raise an appropriate exception.
+
+* **Impact:** This enhancement improves the robustness of the `generate_update_documentation` function, preventing unexpected errors and providing more informative error messages.  This leads to more reliable update generation.
+
+### 3.  Minor Changes to Prompt Structure in `_create_update_prompt`
+
+The prompt structure within `_create_update_prompt` has been slightly adjusted for clarity and consistency. The original prompt included redundancies and was slightly less focused.  This refinement makes the instructions provided to the AI more precise.
+
+---
+
+
+## Documentation Update (2025-01-09 14:04:52)
+
+### Changed Files:
+- docgen/analyzers/base_analyzer.py
+- docgen/analyzers/code_analyzer.py
+- docgen/utils/git_utils.py
+- docgen/utils/extension.py
+
+### Updates:
+
+#### docgen/analyzers/base_analyzer.py
+## Documentation Update: `docgen/analyzers/base_analyzer.py`
+
+**Changes:** The `get_language_extensions` abstract method has been removed from the `BaseAnalyzer` class.
+
+**Impact:**
+
+*   Language-specific analyzers no longer need to implement a method to declare supported file extensions.  The mechanism for determining which analyzer to use for a given file will need to be updated elsewhere in the codebase (this change is not reflected in the provided diff).
+
+**Key Functionality Removed:**
+
+*   The ability to directly query a `BaseAnalyzer` for its supported file extensions.
+
+
+**Important Notes:**
+
+* This change necessitates a modification to the overall analyzer selection logic. The updated logic must determine file type based on other information or methods.
+
+---
+
+#### docgen/analyzers/code_analyzer.py
+## Code Analyzer Documentation Update
+
+The following changes were made to the `CodeAnalyzer` class:
+
+**1. Removed Feature:**
+
+* The `get_language_extensions()` static method has been removed. This method previously returned a list of common programming language file extensions.
+
+**2. Impact:**
+
+* The `CodeAnalyzer` class no longer provides a built-in list of supported file extensions.  If extension-based filtering or language detection is required, this logic must now be implemented elsewhere in the application.
+
+**3. Key Functionality Change:**
+
+* The core `analyze_file()` method remains unchanged.  It still analyzes a file, reading its contents and returning a dictionary with file metadata and source code.
+
+**4. Important Notes:**
+
+*  Any code relying on the `get_language_extensions()` method will need to be updated to provide its own mechanism for identifying file types or filtering by extensions.  
+
+---
+
+#### docgen/utils/git_utils.py
+## Documentation Update: `git_utils.py` - `get_changed_files()` method
+
+**1. New or Modified Features:**
+
+* The `get_changed_files()` method has been completely rewritten for improved efficiency and error handling.
+* It now uses `git diff-index` to retrieve all changes (staged and unstaged) in a single operation, rather than iterating through staged and unstaged changes separately.  This significantly improves performance, especially in large repositories.
+* The method directly accesses the patch from the diff object, reducing redundant file reads and improving speed.
+* Enhanced handling of UnicodeDecodeError during file reading.
+* Explicit checks for file existence before attempting to read content.
+* Improved error handling with more informative console messages.
+* More robust handling of untracked files, including better filtering of hidden and unsupported files.
+* Added support for detecting new files.
+
+**2. Key Functionality:**
+
+* The core functionality remains the same: to identify files changed since the last documentation update and return a dictionary containing file paths, change types ('modified' or 'new'), patch information, and full file content.  However, the implementation is significantly improved for efficiency and robustness.
+
+**3. Simple Usage Example:**
+
+The usage remains unchanged:
+
+```python
+analyzer = GitAnalyzer()
+changed_files = analyzer.get_changed_files()
+```
+
+**4. Important Notes:**
+
+* The previous method's approach of handling staged and unstaged changes separately has been replaced by a more efficient single-pass approach using `git diff-index`.
+* The structure of the returned dictionary remains consistent, though the method of obtaining the change information is significantly different.
+* The error handling is now more comprehensive, providing more detailed information in case of errors.
+* The method now explicitly handles untracked files and better filters for hidden/unsupported files.
+
+
+---
+
+#### docgen/utils/extension.py
+## Documentation Update: `SUPPORTED_EXTENSIONS`
+
+**Changes:** No actual changes were made to the `SUPPORTED_EXTENSIONS` list itself. The provided diff shows the list's *content*, not modifications to it.  Therefore, no functional changes have occurred.  The diff likely represents a refactoring or a simple copy/paste of the existing list into the `docgen/utils/extension.py` file.
+
+**Impact:** No impact on functionality. The list of supported file extensions remains unchanged.
+
+---
+
+
 
 ## Documentation Update (2025-01-09 13:41:39)
 

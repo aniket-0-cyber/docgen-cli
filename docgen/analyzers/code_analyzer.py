@@ -33,12 +33,3 @@ class CodeAnalyzer(BaseAnalyzer):
             }
         except Exception as e:
             raise Exception(f"Error analyzing file {self.path}: {str(e)}")
-
-    @staticmethod
-    def get_language_extensions() -> list[str]:
-        """Return list of common programming file extensions."""
-        return [
-            '.py', '.js', '.ts', '.tsx', '.jsx', '.java', '.cpp', '.c',
-            '.go', '.rs', '.php', '.rb', '.swift',
-            '.kt', '.cs', '.scala', '.r', '.m'
-        ]

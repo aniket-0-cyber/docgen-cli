@@ -24,10 +24,3 @@ class BaseAnalyzer(ABC):
         Must be implemented by language-specific analyzers.
         """
         pass
-
-    @abstractmethod
-    def get_language_extensions(self) -> list[str]:
-        """
-        Return list of file extensions supported by this analyzer.
-        """
-        pass
