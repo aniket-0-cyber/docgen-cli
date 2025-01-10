@@ -5,17 +5,19 @@ warnings.filterwarnings('ignore', category=Warning)
 import typer
 from rich.console import Console
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 import glob
 from docgen.config.config_handler import ConfigHandler
 from docgen.analyzers.code_analyzer import CodeAnalyzer
 from docgen.generators.ai_doc_generator import AIDocGenerator
-from datetime import datetime
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 import time
 import asyncio
 from docgen.utils.git_utils import GitAnalyzer
 from docgen.utils.extension import SUPPORTED_EXTENSIONS
+from docgen.auth.api_key_manager import APIKeyManager
+from docgen.auth.usage_tracker import UsageTracker
 
 app = typer.Typer(
     help="""
@@ -60,6 +62,16 @@ Documentation: https://github.com/yourusername/docgen-cli#readme
 
 console = Console()
 
+class APIKeyRequired(Exception):
+    """Raised when API key is missing or invalid."""
+    pass
+
+def _show_api_key_instructions():
+    """Helper function to show API key instructions."""
+    console.print("\nTo increase your limit, please:")
+    console.print("1. Get an API key at: https://your-website.com/get-api-key")
+    console.print("2. Run: docgen auth login --key YOUR_API_KEY")
+
 async def process_file(path: Path, output_format: str, output_dir: Optional[Path] = None) -> None:
     """Process any source code file and generate documentation."""
     try:
@@ -84,7 +96,7 @@ async def process_file(path: Path, output_format: str, output_dir: Optional[Path
             
         output_path.write_text(doc_content)
         console.print(f"[green]Generated AI documentation for {path} -> {output_path}[/green]")
-        
+
     except Exception as e:
         console.print(f"[red]Error processing {path}: {str(e)}[/red]")
 
@@ -111,8 +123,36 @@ def generate(
     output_dir: Optional[Path] = typer.Option(None, "--output-dir", "-o", help="Output directory for documentation"),
     output_format: str = typer.Option("markdown", help="Output format (markdown/html)"),
 ):
-    """Generate documentation for your codebase."""
-    asyncio.run(_generate_async(path, current_dir, output_dir, output_format))
+    """Generate documentation for a file or directory."""
+    try:
+        # Check usage limits before processing
+        usage_tracker = UsageTracker()
+        can_request, _ = usage_tracker.can_make_request()
+        
+        if not can_request:
+            console.print("[red]Monthly usage limit exceeded![/red]")
+            console.print("To continue using DocGen, please:")
+            console.print("1. Get an API key at: https://your-website.com/get-api-key")
+            console.print("2. Run: docgen auth login --key YOUR_API_KEY")
+            return
+
+        # Validate path exists before proceeding
+        if path and not path.exists():
+            console.print(f"[red]Error: File not found: {path}[/red]")
+            return
+            
+        asyncio.run(_generate_async(path, current_dir, output_dir, output_format))
+        
+        # Only track the request if we successfully generate documentation
+        usage_tracker.track_request()
+        console.print("[green]Documentation generated successfully![/green]")
+
+        _, message = usage_tracker.can_make_request()
+        console.print(f"[blue]{message}[/blue]")
+        _show_api_key_instructions()
+
+    except Exception as e:
+        console.print(f"[red]Error generating documentation: {str(e)}[/red]")
 
 async def _generate_async(
     path: Optional[Path],
@@ -120,8 +160,20 @@ async def _generate_async(
     output_dir: Optional[Path],
     output_format: str,
 ):
-    """Async function to generate documentation."""
+    """Update documentation based on Git changes."""
     try:
+        # Check usage limits before processing
+        usage_tracker = UsageTracker()
+        can_request, message = usage_tracker.can_make_request()
+        
+        if not can_request:
+            console.print("[red]Monthly usage limit exceeded![/red]")
+            console.print("To continue using DocGen, please:")
+            console.print("1. Get an API key at: https://your-website.com/get-api-key")
+            console.print("2. Run: docgen auth login --key YOUR_API_KEY")
+            return
+        
+        
         start_time = time.time()
         base_path = Path.cwd()
 
@@ -212,14 +264,16 @@ async def _generate_async(
         console.print(f"[blue]Time taken: {elapsed_time:.2f} seconds[/blue]")
         console.print(f"[blue]Processed {len(files_data)} source files ({total_size/1024:.1f} KB)[/blue]")
 
+        # Track the command after successful execution
+        console.print("[green]Documentation update completed successfully![/green]")
+
     except Exception as e:
-        console.print(f"[red]Error generating documentation: {str(e)}[/red]")
-        raise typer.Exit(1)
+        console.print(f"[red]Error: {str(e)}[/red]")
 
 # Add command alias for shorter version
 app.command(name="g", help="Alias for generate command")(generate)
 
-@app.command()
+@app.command(name="config", help="Configure DocGen settings and preferences")
 def config(
     key: str = typer.Argument(..., help="Configuration key to get/set"),
     value: Optional[str] = typer.Option(None, help="Value to set (if not provided, shows current value)")
@@ -233,7 +287,7 @@ def config(
         config_handler.save()
         console.print(f"Updated {key} to: {value}")
 
-@app.command()
+@app.command(name="version", help="Display DocGen version information")
 def version():
     """Show the version of DocGen."""
     import pkg_resources
@@ -301,35 +355,75 @@ def update_docs(
         help="Store updates in a separate file (e.g., 'updates.md')")
 ):
     """Update documentation for changed files since last documentation generation."""
-    asyncio.run(_update_docs_async(output_dir, output_format, full_update, updates_file))
+    try:
+        # Check usage limits before processing
+        usage_tracker = UsageTracker()
+        can_request, message = usage_tracker.can_make_request()
+        
+        if not can_request:
+            console.print("[red]Monthly usage limit exceeded![/red]")
+            console.print("To continue using DocGen, please:")
+            console.print("1. Get an API key at: https://your-website.com/get-api-key")
+            console.print("2. Run: docgen auth login --key YOUR_API_KEY")
+            raise typer.Exit(1)
+        
+        asyncio.run(_update_docs_async(output_dir, output_format, full_update, updates_file))
+        
+        # Only track the request if we successfully update documentation
+        usage_tracker.track_request()
+        console.print("[green]Documentation updated successfully![/green]")
+
+        _, message = usage_tracker.can_make_request()
+        console.print(f"[blue]{message}[/blue]")
+        _show_api_key_instructions()
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]Error updating documentation: {str(e)}[/red]")
+        raise typer.Exit(1)
+    
 
 async def _update_docs_async(
-    output_dir: Optional[Path], 
-    output_format: str, 
+    output_dir: Optional[Path],
+    output_format: str,
     full_update: bool,
     updates_file: Optional[str]
 ):
     try:
-        # Ensure we're working with absolute paths
-        base_path = Path.cwd().resolve()
-        output_dir = output_dir.resolve() if output_dir else base_path
+        # Check usage limits before processing
+        usage_tracker = UsageTracker()
+        can_request, message = usage_tracker.can_make_request()
         
-        # Process updates file path
-        updates_path = None
-        if updates_file:
-            updates_path = (output_dir / updates_file).resolve()
-            if not updates_path.suffix:
-                updates_path = updates_path.with_suffix('.md')
+        if not can_request:
+            console.print("[red]Monthly usage limit exceeded![/red]")
+            console.print("To continue using DocGen, please:")
+            console.print("1. Get an API key at: https://your-website.com/get-api-key")
+            console.print("2. Run: docgen auth login --key YOUR_API_KEY")
+            raise typer.Exit(1)
         
+        # Get changed files
         git_analyzer = GitAnalyzer()
         changed_files = git_analyzer.get_changed_files()
         
         if not changed_files:
             console.print("[yellow]No changes detected[/yellow]")
             return
+
+        # Rest of the existing update code...
+        base_path = Path.cwd().resolve()
+        output_dir = output_dir.resolve() if output_dir else base_path
         
-        # Process changed files with their specific changes
+        updates_path = None
+        if updates_file:
+            updates_path = (output_dir / updates_file).resolve()
+            if not updates_path.suffix:
+                updates_path = updates_path.with_suffix('.md')
+        
+        # Process changed files
         files_data = []
+        docs_results = {}
+        
         for file_path, change_info in changed_files.items():
             try:
                 if file_path.exists():
@@ -340,16 +434,14 @@ async def _update_docs_async(
                     files_data.append((
                         rel_path,
                         analysis_result,
-                        change_info['full_code'],  # Full current code
-                        change_info['changes']     # Actual changes
+                        change_info['full_code'],
+                        change_info['changes']
                     ))
             except Exception as e:
                 console.print(f"[yellow]Warning: Could not analyze {file_path}: {str(e)}[/yellow]")
         
         # Generate documentation
         ai_generator = AIDocGenerator()
-        docs_results = {}
-        
         for file_path, analysis, code, changes in files_data:
             try:
                 doc = await ai_generator.generate_update_documentation(code, changes)
@@ -364,7 +456,6 @@ async def _update_docs_async(
                 update_existing_documentation(doc_file, docs_results, files_data)
                 console.print(f"[green]Updated full documentation for {len(files_data)} files[/green]")
         else:
-            # Handle incremental updates
             if updates_path:
                 add_incremental_update(updates_path, docs_results, files_data, create_if_missing=True)
                 console.print(f"[green]Added updates to {updates_path.name}[/green]")
@@ -377,7 +468,7 @@ async def _update_docs_async(
         
         # Update last documented state
         git_analyzer.update_last_documented_state()
-        
+
     except Exception as e:
         console.print(f"[red]Error updating documentation: {str(e)}[/red]")
         raise typer.Exit(1)
@@ -491,6 +582,64 @@ def add_incremental_update(
 
 # Add command alias for shorter version
 app.command(name="u", help="Alias for update command")(update_docs)
+
+@app.command(name="auth")
+def auth(
+    command: str = typer.Argument(..., help="Login or logout"),
+    api_key: Optional[str] = typer.Option(None, "--key", "-k", help="API key for login")
+):
+    """Manage authentication."""
+    api_key_manager = APIKeyManager()
+    
+    if command.lower() == "login":
+        if not api_key:
+            console.print("[yellow]Please provide an API key using --key option[/yellow]")
+            console.print("Get your API key at: https://your-website.com/get-api-key")
+            raise typer.Exit(1)
+            
+        if api_key_manager.validate_api_key(api_key):
+            api_key_manager.set_api_key(api_key)
+            console.print("[green]Successfully logged in![/green]")
+        else:
+            console.print("[red]Invalid API key[/red]")
+            raise typer.Exit(1)
+            
+    elif command.lower() == "logout":
+        api_key_manager.set_api_key(None)
+        console.print("[green]Successfully logged out[/green]")
+        
+    else:
+        console.print("[red]Invalid command. Use 'login' or 'logout'[/red]")
+        raise typer.Exit(1)
+
+@app.command(name="usage")
+def check_usage():
+    """Check current usage statistics."""
+    usage_tracker = UsageTracker()
+    usage = usage_tracker._load_usage()
+    
+    # Get request counts
+    anon_requests = len(usage_tracker._clean_old_requests(usage['anonymous_requests']))
+    auth_requests = len(usage_tracker._clean_old_requests(usage['authenticated_requests']))
+    
+    # Get limits
+    anon_limit = usage_tracker._get_monthly_limit()  # Will get anonymous limit
+    
+    console.print(f"\n[bold]Current Usage Statistics[/bold]")
+    
+    if usage.get('api_key'):
+        auth_limit = usage_tracker._get_monthly_limit()  # Will get authenticated limit
+        console.print(f"Plan: {usage['plan'].title()}")
+        console.print(f"Authenticated requests this month: {auth_requests}/{auth_limit}")
+        console.print(f"Remaining requests: {auth_limit - auth_requests}")
+    else:
+        console.print("Plan: Anonymous (No API Key)")
+        console.print(f"Anonymous requests this month: {anon_requests}/{anon_limit}")
+        console.print(f"Remaining requests: {anon_limit - anon_requests}")
+        if anon_requests >= (anon_limit - 5):
+            # Fixed the markup syntax
+            console.print("\n[yellow]⚠️  You're approaching the anonymous usage limit![/yellow]")
+            console.print("[yellow]Get an API key to increase your limit: https://your-website.com/get-api-key[/yellow]")
 
 def main():
     app()
