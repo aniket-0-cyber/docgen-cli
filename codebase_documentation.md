@@ -1,6 +1,70 @@
 
 # Recent Updates
 
+## Documentation Update (2025-01-10 12:04:01)
+
+### Changed Files:
+- docgen/cli.py
+- docgen/generators/ai_doc_generator.py
+
+### Updates:
+
+#### docgen/cli.py
+## DocGen CLI Update:  Documentation Generation Improvements
+
+This update focuses on enhancing the core documentation generation process and improving the handling of large codebases.
+
+**Changes:**
+
+* **Improved File Handling:** The `generate` command now leverages the `SUPPORTED_EXTENSIONS` constant to determine which files to process,  eliminating the hardcoded list of extensions. This allows for easier extensibility in supporting new file types.
+* **Large File Handling:**  The `generate` command now skips files larger than 2MB to prevent excessive processing time and potential memory issues. A warning message is displayed for each skipped file.
+* **Asynchronous Batch Processing:**  The `generate` command now uses asynchronous operations with `asyncio` to improve the speed of processing multiple files concurrently.
+* **Removal of `analyze` command:** The `analyze` command has been removed.  The code analysis functionality remains integrated into the `generate` command.
+
+**Simple Usage Example (generate command):**
+
+To generate documentation for the current directory, including files with supported extensions:
+
+```bash
+docgen generate --current-dir
+```
+
+**Important Notes:**
+
+* The removal of the standalone `analyze` command means that code analysis is now performed implicitly during documentation generation.
+* The introduction of asynchronous processing may significantly reduce the time required to generate documentation for large codebases.  However, the actual speed improvement will depend on your system's resources and the complexity of the codebase.
+* The 2MB file size limit for skipping large files can be adjusted in the source code if needed.
+
+---
+
+#### docgen/generators/ai_doc_generator.py
+## Documentation Update: `AIDocGenerator` Class
+
+The following changes were made to the `AIDocGenerator` class:
+
+### 1. Improved `_create_update_prompt` Function:
+
+* **Original Prompt:** The original prompt for generating update documentation was less specific, requesting features, functionality, examples, and notes without explicitly focusing on changes.
+
+* **Updated Prompt:** The updated `_create_update_prompt` function now provides a more precise prompt.  It explicitly instructs the AI to focus only on changes and their impact, specifying the format and desired level of detail.  The prompt now also clearly indicates what constitutes additions and deletions using the `+` and `-` symbols respectively in the diff.  The required sections are also more concise and relevant to change analysis.
+
+
+* **Impact:** This change results in more focused and relevant documentation updates, highlighting only the differences between code versions.  The AI is guided to provide more concise and technical updates focused solely on the impacted aspects.
+
+
+### 2.  `generate_update_documentation` Function:
+
+* **Change:** The method now includes error handling, ensuring that empty or null responses from the AI model are explicitly handled and raise an appropriate exception.
+
+* **Impact:** This enhancement improves the robustness of the `generate_update_documentation` function, preventing unexpected errors and providing more informative error messages.  This leads to more reliable update generation.
+
+### 3.  Minor Changes to Prompt Structure in `_create_update_prompt`
+
+The prompt structure within `_create_update_prompt` has been slightly adjusted for clarity and consistency. The original prompt included redundancies and was slightly less focused.  This refinement makes the instructions provided to the AI more precise.
+
+---
+
+
 ## Documentation Update (2025-01-09 14:04:52)
 
 ### Changed Files:

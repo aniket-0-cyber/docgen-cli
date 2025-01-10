@@ -239,10 +239,9 @@ class AIDocGenerator:
                 ```
                 {changes}
                 ```
-                1. Any new or modified features (bullet points)
-                2. Key functionality (bullet points, if any)
-                3. Simple usage example (if applicable)
-                4. Important notes (if any)
+                1. Any new or modified or removed features with key functionality changes (bullet points)
+                2. Simple usage example (if applicable)
+                3. Important notes (only if changes are critical or important)
 
                 Format in markdown, be short and concise and technical, focusing only on the changes.
                 """ 

@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 import asyncio
 from docgen.utils.git_utils import GitAnalyzer
+from docgen.utils.extension import SUPPORTED_EXTENSIONS
 
 app = typer.Typer(
     help="""
@@ -123,13 +124,6 @@ async def _generate_async(
     try:
         start_time = time.time()
         base_path = Path.cwd()
-        
-        # Get supported extensions first
-        extensions = [
-            '.py', '.js', '.ts', '.tsx', '.jsx', '.java', '.cpp', '.c',
-            '.go', '.rs', '.php', '.rb', '.swift',
-            '.kt', '.cs', '.scala', '.r', '.m'
-        ]
 
         if path:  # Single file mode
             if not path.exists():
@@ -144,11 +138,11 @@ async def _generate_async(
         # Directory mode (current dir or full codebase)
         if current_dir:
             files = []
-            for ext in extensions:
+            for ext in SUPPORTED_EXTENSIONS:
                 files.extend(list(base_path.glob(f"*{ext}")))
         else:
             files = []
-            for ext in extensions:
+            for ext in SUPPORTED_EXTENSIONS:
                 files.extend(list(base_path.rglob(f"*{ext}")))
 
         source_files = [f for f in files if should_process_file(f, base_path)]
@@ -224,42 +218,6 @@ async def _generate_async(
 
 # Add command alias for shorter version
 app.command(name="g", help="Alias for generate command")(generate)
-
-@app.command()
-def analyze(
-    path: Path = typer.Argument(..., help="Path to the source code directory or file"),
-    output_format: str = typer.Option("markdown", help="Output format (markdown/html)"),
-    recursive: bool = typer.Option(False, help="Recursively process directories")
-):
-    """Analyze source code and generate documentation."""
-    try:
-        if not path.exists():
-            console.print(f"[red]Error: Path does not exist: {path}[/red]")
-            raise typer.Exit(1)
-            
-        console.print(f"Analyzing code at: {path}")
-        
-        config_handler = ConfigHandler()
-        config_handler.set("output_format", output_format)
-        config_handler.set("recursive", recursive)
-        
-        if path.is_file():
-            process_file(path, output_format)
-        else:
-            analyzer = CodeAnalyzer(Path())  # Temporary instance to get extensions
-            extensions = analyzer.get_language_extensions()
-            pattern = f"**/*{{{','.join(extensions)}}}" if recursive else f"*{{{','.join(extensions)}}}"
-            files = glob.glob(str(path / pattern), recursive=recursive)
-            
-            with console.status("[bold green]Processing files...") as status:
-                for file_path in files:
-                    process_file(Path(file_path), output_format)
-                    
-        console.print("[green]Documentation generation completed![/green]")
-
-    except Exception as e:
-        console.print(f"[red]Error analyzing code: {str(e)}[/red]")
-        raise typer.Exit(1)
 
 @app.command()
 def config(
