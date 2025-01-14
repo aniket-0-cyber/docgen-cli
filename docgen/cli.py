@@ -18,6 +18,7 @@ from docgen.utils.git_utils import GitAnalyzer
 from docgen.utils.extension import SUPPORTED_EXTENSIONS
 from docgen.auth.api_key_manager import APIKeyManager
 from docgen.auth.usage_tracker import UsageTracker
+from docgen.utils.ai_client import AIClient
 
 app = typer.Typer(
     help="""
@@ -597,15 +598,15 @@ def auth(
             console.print("Get your API key at: https://your-website.com/get-api-key")
             raise typer.Exit(1)
             
-        if api_key_manager.validate_api_key(api_key):
-            api_key_manager.set_api_key(api_key)
-            console.print("[green]Successfully logged in![/green]")
+        success, plan = api_key_manager.validate_api_key(api_key)
+        if success:
+            console.print(f"[green]Successfully logged in! Plan: {plan.title()}[/green]")
         else:
             console.print("[red]Invalid API key[/red]")
             raise typer.Exit(1)
             
     elif command.lower() == "logout":
-        api_key_manager.set_api_key(None)
+        api_key_manager.set_api_key(None, None)  # Clear both key and plan
         console.print("[green]Successfully logged out[/green]")
         
     else:
@@ -613,33 +614,24 @@ def auth(
         raise typer.Exit(1)
 
 @app.command(name="usage")
-def check_usage():
-    """Check current usage statistics."""
-    usage_tracker = UsageTracker()
-    usage = usage_tracker._load_usage()
+def usage():
+    """Show current usage statistics."""
+    tracker = UsageTracker()
+    usage_data = tracker._load_usage()  # Force reload to get current plan
+    can_request, message = tracker.can_make_request()
     
-    # Get request counts
-    anon_requests = len(usage_tracker._clean_old_requests(usage['anonymous_requests']))
-    auth_requests = len(usage_tracker._clean_old_requests(usage['authenticated_requests']))
+    console.print("\n[bold]Current Usage Statistics[/bold]")
     
-    # Get limits
-    anon_limit = usage_tracker._get_monthly_limit()  # Will get anonymous limit
-    
-    console.print(f"\n[bold]Current Usage Statistics[/bold]")
-    
-    if usage.get('api_key'):
-        auth_limit = usage_tracker._get_monthly_limit()  # Will get authenticated limit
-        console.print(f"Plan: {usage['plan'].title()}")
-        console.print(f"Authenticated requests this month: {auth_requests}/{auth_limit}")
-        console.print(f"Remaining requests: {auth_limit - auth_requests}")
+    if usage_data.get('api_key'):
+        console.print(f"Plan: [green]{usage_data['plan'].title()}[/green] (API Key: {usage_data['api_key'][:8]}...)")
     else:
-        console.print("Plan: Anonymous (No API Key)")
-        console.print(f"Anonymous requests this month: {anon_requests}/{anon_limit}")
-        console.print(f"Remaining requests: {anon_limit - anon_requests}")
-        if anon_requests >= (anon_limit - 5):
-            # Fixed the markup syntax
-            console.print("\n[yellow]⚠️  You're approaching the anonymous usage limit![/yellow]")
-            console.print("[yellow]Get an API key to increase your limit: https://your-website.com/get-api-key[/yellow]")
+        console.print("Plan: [yellow]Anonymous[/yellow] (No API Key)")
+    
+    console.print(message)
+    
+    if not can_request:
+        console.print("[red]You have reached your usage limit![/red]")
+        _show_api_key_instructions()
 
 def main():
     app()

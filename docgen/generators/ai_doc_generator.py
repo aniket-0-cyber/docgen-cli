@@ -1,70 +1,41 @@
 from rich.console import Console
-import google.generativeai as genai
 from pathlib import Path
 from typing import Dict, List, Tuple
 import os
 import json
 import hashlib
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
-from dotenv import load_dotenv
 import time
 from ratelimit import limits, sleep_and_retry
+from docgen.auth.api_key_manager import APIKeyManager
+from docgen.utils.ai_client import AIClient
 
-load_dotenv()
 console = Console()
 
 class AIDocGenerator:
     def __init__(self):
-        self.api_key = os.getenv("GOOGLE_API_KEY")
-        if not self.api_key:
-            raise ValueError("Please set GOOGLE_API_KEY environment variable")
-        
-        genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.api_key_manager = APIKeyManager()
+        self.ai_client = AIClient()
         
         # Cache and rate limit settings
         self.cache_dir = Path.home() / '.docgen' / 'cache'
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.CALLS_PER_MINUTE = 14
         self.PERIOD = 60
-        self.last_call = 0
-        self.call_count = 0
-        self.MIN_WAIT_TIME = 5  # minimum wait time in seconds
+        self.MIN_WAIT_TIME = 5
         self.MAX_RETRIES = 3 
         self.BACKOFF_FACTOR = 2 
         
         # Initialize memory cache
         self._memory_cache = {}
-        
-        # Initialize console for status messages
         self.console = Console()
-
-        self.BATCH_SIZE = 5  # Process files in smaller batches
+        self.BATCH_SIZE = 5
         self.PARALLEL_WORKERS = min(multiprocessing.cpu_count(), 4)
         self._cache_hits = 0
         self._api_calls = 0
-
-    def _create_prompt(self, code: str) -> str:
-        """Create a language-agnostic prompt for the AI model."""
-        return f"""
-        Create technical documentation for this code:
-
-        CODE:
-        ```
-        {code}
-        ```
-        
-        Please provide:
-        1. Brief purpose/overview (1-2 sentences max)
-        2. Key functionality (bullet points)
-        3. Usage example (if applicable)
-        4. Important notes (only if changes are critical or important)
-
-        Format in markdown, be short and concise and technical.
-        """
 
     @sleep_and_retry
     @limits(calls=14, period=60)
@@ -73,11 +44,10 @@ class AIDocGenerator:
         retries = 0
         while retries < self.MAX_RETRIES:
             try:
-                prompt = self._create_prompt(code)
-                response = self.model.generate_content(prompt)
-                if not response.text:
+                response = self.ai_client.generate_text(code=code, prompt_type='doc')
+                if not response:
                     raise ValueError("Empty response from AI model")
-                return response.text
+                return response
             except Exception as e:
                 retries += 1
                 wait_time = self.MIN_WAIT_TIME * (self.BACKOFF_FACTOR ** retries)
@@ -92,7 +62,6 @@ class AIDocGenerator:
         
         for path, analysis, code in group:
             try:
-                # Fast cache check
                 cache_key = self._fast_cache_key(code, analysis)
                 doc = self._get_cached_doc(cache_key)
                 
@@ -222,35 +191,6 @@ class AIDocGenerator:
         """Faster cache key generation."""
         key_content = f"{code[:100]}{str(analysis.get('classes', []))}{str(analysis.get('functions', []))}"
         return hashlib.md5(key_content.encode()).hexdigest() 
-
-    def _create_update_prompt(self, code: str, changes: str) -> str:
-        """Create a prompt specifically for updating documentation based on changes."""
-        return f"""As an expert developer, analyze these code changes and generate focused documentation updates.
-                Focus only on what has changed and its impact. Format in markdown.
-
-                Original Code Context:
-                ```
-                {code}
-                Code Changes (+ for additions, - for deletions):
-                ```
-
-                Changes made:
-                ```
-                {changes}
-                ```
-
-                if there are no changes, then explain the code with below format:
-                Please provide:
-                1. Brief overview (1-2 sentences max)
-                2. Key functionality (bullet points)
-                3. Usage example (if applicable)
-                else:
-                1. Any new or modified or removed features with key functionality changes (bullet points)
-                2. Simple usage example (if applicable)
-                3. Important notes (only if changes are critical or important)
-
-                Format in markdown, be short and concise and technical, focusing only on the changes.
-                """ 
     
     @sleep_and_retry
     @limits(calls=14, period=60)
@@ -259,11 +199,25 @@ class AIDocGenerator:
         try:
             if not changes.strip():
                 return "No significant code changes detected."
-            prompt = self._create_update_prompt(code, changes)
-            response = self.model.generate_content(prompt)
-            
-            if not response or not response.text:
-                raise ValueError("Empty response from AI model")
-            return response.text
+                
+            retries = 0
+            while retries < self.MAX_RETRIES:
+                try:
+                    response = self.ai_client.generate_text(
+                        code=code,
+                        changes=changes,
+                        prompt_type='update'
+                    )
+                    if not response:
+                        raise ValueError("Empty response from AI model")
+                    return response
+                except Exception as e:
+                    retries += 1
+                    wait_time = self.MIN_WAIT_TIME * (self.BACKOFF_FACTOR ** retries)
+                    self.console.print(f"[yellow]Attempt {retries}/{self.MAX_RETRIES} failed. Waiting {wait_time}s...[/yellow]")
+                    time.sleep(wait_time)
+                    if retries == self.MAX_RETRIES:
+                        raise Exception(f"Failed after {self.MAX_RETRIES} attempts: {str(e)}")
+                        
         except Exception as e:
             raise Exception(f"Failed to generate update documentation: {str(e)}")
