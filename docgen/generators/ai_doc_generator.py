@@ -135,7 +135,6 @@ class AIDocGenerator:
                 
                 if completed % 5 == 0:
                     self.console.print(f"[green]Processed: {completed}/{total} files[/green]")
-        
         return results
 
     def _group_similar_files(self, files_data: List[Tuple[Path, Dict, str]]) -> List[List[Tuple[Path, Dict, str]]]:
@@ -239,6 +238,13 @@ class AIDocGenerator:
                 ```
                 {changes}
                 ```
+
+                if there are no changes, then explain the code with below format:
+                Please provide:
+                1. Brief overview (1-2 sentences max)
+                2. Key functionality (bullet points)
+                3. Usage example (if applicable)
+                else:
                 1. Any new or modified or removed features with key functionality changes (bullet points)
                 2. Simple usage example (if applicable)
                 3. Important notes (only if changes are critical or important)
