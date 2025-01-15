@@ -1,6 +1,390 @@
 
 # Recent Updates
 
+## Documentation Update (2025-01-15 13:46:01)
+
+### Changed Files:
+- docgen/cli.py
+- docgen/generators/ai_doc_generator.py
+- backend/run.py
+- backend/src/config/settings.py
+- backend/src/main.py
+- backend/src/models/usage.py
+- backend/src/models/user.py
+- backend/src/routes/auth.py
+- backend/src/routes/gemini.py
+- backend/src/routes/usage.py
+- backend/src/utils/prompts.py
+- backend/src/utils/security.py
+- backend/src/utils/supabase_client.py
+
+### Updates:
+
+#### docgen/cli.py
+### Documentation Update for `docgen/cli.py`
+
+1. **New Features and Modifications:**
+
+* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
+* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
+* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
+* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
+* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
+
+2. **Usage Examples:**
+
+* **Generating documentation for changed files only (incremental updates):**
+ ```bash
+ docgen update --updates-file updates.md
+ ```
+* **Generating documentation for all files (full update):**
+ ```bash
+ docgen update --full
+ ```
+
+3. **Important Notes:**
+
+* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
+
+---
+
+#### docgen/generators/ai_doc_generator.py
+### Documentation Update for `docgen/cli.py`
+
+1. **New Features and Modifications:**
+
+* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
+* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
+* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
+* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
+* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
+
+2. **Usage Examples:**
+
+* **Generating documentation for changed files only (incremental updates):**
+ ```bash
+ docgen update --updates-file updates.md
+ ```
+* **Generating documentation for all files (full update):**
+ ```bash
+ docgen update --full
+ ```
+
+3. **Important Notes:**
+
+* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
+
+---
+
+#### backend/run.py
+### Documentation Update for `docgen/cli.py`
+
+1. **New Features and Modifications:**
+
+* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
+* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
+* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
+* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
+* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
+
+2. **Usage Examples:**
+
+* **Generating documentation for changed files only (incremental updates):**
+ ```bash
+ docgen update --updates-file updates.md
+ ```
+* **Generating documentation for all files (full update):**
+ ```bash
+ docgen update --full
+ ```
+
+3. **Important Notes:**
+
+* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
+
+---
+
+#### backend/src/config/settings.py
+### Documentation Update for `docgen/cli.py`
+
+1. **New Features and Modifications:**
+
+* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
+* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
+* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
+* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
+* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
+
+2. **Usage Examples:**
+
+* **Generating documentation for changed files only (incremental updates):**
+ ```bash
+ docgen update --updates-file updates.md
+ ```
+* **Generating documentation for all files (full update):**
+ ```bash
+ docgen update --full
+ ```
+
+3. **Important Notes:**
+
+* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
+
+---
+
+#### backend/src/main.py
+### Documentation Update for `docgen/cli.py`
+
+1. **New Features and Modifications:**
+
+* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
+* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
+* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
+* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
+* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
+
+2. **Usage Examples:**
+
+* **Generating documentation for changed files only (incremental updates):**
+ ```bash
+ docgen update --updates-file updates.md
+ ```
+* **Generating documentation for all files (full update):**
+ ```bash
+ docgen update --full
+ ```
+
+3. **Important Notes:**
+
+* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
+
+---
+
+#### backend/src/models/usage.py
+### Documentation Update for `docgen/cli.py`
+
+1. **New Features and Modifications:**
+
+* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
+* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
+* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
+* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
+* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
+
+2. **Usage Examples:**
+
+* **Generating documentation for changed files only (incremental updates):**
+ ```bash
+ docgen update --updates-file updates.md
+ ```
+* **Generating documentation for all files (full update):**
+ ```bash
+ docgen update --full
+ ```
+
+3. **Important Notes:**
+
+* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
+
+---
+
+#### backend/src/models/user.py
+### Documentation Update for `docgen/cli.py`
+
+1. **New Features and Modifications:**
+
+* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
+* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
+* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
+* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
+* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
+
+2. **Usage Examples:**
+
+* **Generating documentation for changed files only (incremental updates):**
+ ```bash
+ docgen update --updates-file updates.md
+ ```
+* **Generating documentation for all files (full update):**
+ ```bash
+ docgen update --full
+ ```
+
+3. **Important Notes:**
+
+* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
+
+---
+
+#### backend/src/routes/auth.py
+### Documentation Update for `docgen/cli.py`
+
+1. **New Features and Modifications:**
+
+* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
+* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
+* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
+* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
+* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
+
+2. **Usage Examples:**
+
+* **Generating documentation for changed files only (incremental updates):**
+ ```bash
+ docgen update --updates-file updates.md
+ ```
+* **Generating documentation for all files (full update):**
+ ```bash
+ docgen update --full
+ ```
+
+3. **Important Notes:**
+
+* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
+
+---
+
+#### backend/src/routes/gemini.py
+### Documentation Update for `docgen/cli.py`
+
+1. **New Features and Modifications:**
+
+* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
+* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
+* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
+* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
+* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
+
+2. **Usage Examples:**
+
+* **Generating documentation for changed files only (incremental updates):**
+ ```bash
+ docgen update --updates-file updates.md
+ ```
+* **Generating documentation for all files (full update):**
+ ```bash
+ docgen update --full
+ ```
+
+3. **Important Notes:**
+
+* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
+
+---
+
+#### backend/src/routes/usage.py
+### Documentation Update for `docgen/cli.py`
+
+1. **New Features and Modifications:**
+
+* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
+* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
+* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
+* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
+* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
+
+2. **Usage Examples:**
+
+* **Generating documentation for changed files only (incremental updates):**
+ ```bash
+ docgen update --updates-file updates.md
+ ```
+* **Generating documentation for all files (full update):**
+ ```bash
+ docgen update --full
+ ```
+
+3. **Important Notes:**
+
+* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
+
+---
+
+#### backend/src/utils/prompts.py
+### Documentation Update for `docgen/cli.py`
+
+1. **New Features and Modifications:**
+
+* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
+* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
+* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
+* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
+* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
+
+2. **Usage Examples:**
+
+* **Generating documentation for changed files only (incremental updates):**
+ ```bash
+ docgen update --updates-file updates.md
+ ```
+* **Generating documentation for all files (full update):**
+ ```bash
+ docgen update --full
+ ```
+
+3. **Important Notes:**
+
+* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
+
+---
+
+#### backend/src/utils/security.py
+### Documentation Update for `docgen/cli.py`
+
+1. **New Features and Modifications:**
+
+* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
+* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
+* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
+* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
+* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
+
+2. **Usage Examples:**
+
+* **Generating documentation for changed files only (incremental updates):**
+ ```bash
+ docgen update --updates-file updates.md
+ ```
+* **Generating documentation for all files (full update):**
+ ```bash
+ docgen update --full
+ ```
+
+3. **Important Notes:**
+
+* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
+
+---
+
+#### backend/src/utils/supabase_client.py
+### Documentation Update for `docgen/cli.py`
+
+1. **New Features and Modifications:**
+
+* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
+* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
+* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
+* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
+* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
+
+2. **Usage Examples:**
+
+* **Generating documentation for changed files only (incremental updates):**
+ ```bash
+ docgen update --updates-file updates.md
+ ```
+* **Generating documentation for all files (full update):**
+ ```bash
+ docgen update --full
+ ```
+
+3. **Important Notes:**
+
+* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
+
+---
+
+
 ## Documentation Update (2025-01-10 12:04:01)
 
 ### Changed Files:

@@ -76,10 +76,32 @@ def _show_api_key_instructions():
 async def process_file(path: Path, output_format: str, output_dir: Optional[Path] = None) -> None:
     """Process any source code file and generate documentation."""
     try:
+        # Verify file exists and is readable
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+            
+        # Read file content with proper encoding
+        try:
+            source_code = path.read_text(encoding='utf-8')
+        except UnicodeDecodeError:
+            try:
+                source_code = path.read_text(encoding='latin-1')
+            except Exception:
+                console.print(f"[red]Error: Unable to read file {path}[/red]")
+                return
+            
+        if not source_code.strip():
+            console.print(f"[yellow]Warning: Empty file {path}[/yellow]")
+            return
+            
+        # Analyze code
         analyzer = CodeAnalyzer(path)
         analysis_result = analyzer.analyze_file()
-        source_code = path.read_text()
         
+        if not analysis_result:
+            console.print(f"[yellow]Warning: No analyzable content in {path}[/yellow]")
+            return
+            
         # Generate AI documentation
         ai_generator = AIDocGenerator()
         documentation = await ai_generator.generate_documentation_batch([
@@ -87,15 +109,25 @@ async def process_file(path: Path, output_format: str, output_dir: Optional[Path
         ])
         
         # Get the documentation for the single file
-        doc_content = documentation.get(path, "Error: Documentation generation failed")
-        
+        doc_content = documentation.get(path)
+        if not doc_content or doc_content.startswith("Error:"):
+            console.print(f"[yellow]Warning: {doc_content or 'Failed to generate documentation'} for {path}[/yellow]")
+            return
+            
         # Save documentation
         if output_dir:
             output_path = output_dir / f"{path.stem}.md"
         else:
             output_path = path.with_suffix('.md')
             
-        output_path.write_text(doc_content)
+        # Add file header
+        final_content = [
+            f"# {path.name} Documentation\n",
+            f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n",
+            doc_content
+        ]
+        
+        output_path.write_text("\n".join(final_content))
         console.print(f"[green]Generated AI documentation for {path} -> {output_path}[/green]")
 
     except Exception as e:
@@ -403,6 +435,8 @@ async def _update_docs_async(
             console.print("2. Run: docgen auth login --key YOUR_API_KEY")
             raise typer.Exit(1)
         
+        start_time = time.time()
+        
         # Get changed files
         git_analyzer = GitAnalyzer()
         changed_files = git_analyzer.get_changed_files()
@@ -411,53 +445,57 @@ async def _update_docs_async(
             console.print("[yellow]No changes detected[/yellow]")
             return
 
-        # Rest of the existing update code...
         base_path = Path.cwd().resolve()
         output_dir = output_dir.resolve() if output_dir else base_path
         
-        updates_path = None
-        if updates_file:
-            updates_path = (output_dir / updates_file).resolve()
-            if not updates_path.suffix:
-                updates_path = updates_path.with_suffix('.md')
-        
-        # Process changed files
+        # Prepare batch data
         files_data = []
-        docs_results = {}
-        
-        for file_path, change_info in changed_files.items():
-            try:
-                if file_path.exists():
-                    abs_path = file_path.resolve()
-                    analyzer = CodeAnalyzer(abs_path)
-                    analysis_result = analyzer.analyze_file()
-                    rel_path = abs_path.relative_to(base_path)
-                    files_data.append((
-                        rel_path,
-                        analysis_result,
-                        change_info['full_code'],
-                        change_info['changes']
-                    ))
-            except Exception as e:
-                console.print(f"[yellow]Warning: Could not analyze {file_path}: {str(e)}[/yellow]")
-        
-        # Generate documentation
+        total_size = 0
+        with console.status("[bold green]Analyzing changed files...") as status:
+            for file_path, change_info in changed_files.items():
+                try:
+                    if file_path.exists():
+                        file_size = file_path.stat().st_size
+                        if file_size > 2_000_000:  # Skip files larger than 2MB
+                            console.print(f"[yellow]Skipping large file: {file_path}[/yellow]")
+                            continue
+                            
+                        total_size += file_size
+                        abs_path = file_path.resolve()
+                        analyzer = CodeAnalyzer(abs_path)
+                        analysis_result = analyzer.analyze_file()
+                        rel_path = abs_path.relative_to(base_path)
+
+                        files_data.append((
+                            rel_path,
+                            analysis_result,
+                            change_info['full_code'],
+                            change_info['changes']
+                        ))
+                        
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Could not analyze {file_path}: {str(e)}[/yellow]")
+
+        if not files_data:
+            console.print("[yellow]No files to process after analysis[/yellow]")
+            return
+
+        # Generate documentation in batch
         ai_generator = AIDocGenerator()
-        for file_path, analysis, code, changes in files_data:
-            try:
-                doc = await ai_generator.generate_update_documentation(code, changes)
-                docs_results[file_path] = doc
-            except Exception as e:
-                console.print(f"[yellow]Warning: Could not generate update for {file_path}: {str(e)}[/yellow]")
-        
+        with console.status("[bold green]Generating documentation...") as status:
+            docs_results = await ai_generator.generate_update_documentation_batch(files_data)
+
         # Handle documentation updates
         doc_file = (output_dir / "codebase_documentation.md").resolve()
         if full_update:
             if doc_file.exists():
-                update_existing_documentation(doc_file, docs_results, files_data)
+                update_existing_documentation(doc_file, docs_results, [f[0] for f in files_data])
                 console.print(f"[green]Updated full documentation for {len(files_data)} files[/green]")
         else:
-            if updates_path:
+            if updates_file:
+                updates_path = (output_dir / updates_file).resolve()
+                if not updates_path.suffix:
+                    updates_path = updates_path.with_suffix('.md')
                 add_incremental_update(updates_path, docs_results, files_data, create_if_missing=True)
                 console.print(f"[green]Added updates to {updates_path.name}[/green]")
             elif doc_file.exists():
@@ -469,6 +507,11 @@ async def _update_docs_async(
         
         # Update last documented state
         git_analyzer.update_last_documented_state()
+
+        elapsed_time = time.time() - start_time
+        console.print(f"[green]Documentation updated successfully![/green]")
+        console.print(f"[blue]Time taken: {elapsed_time:.2f} seconds[/blue]")
+        console.print(f"[blue]Processed {len(files_data)} changed files ({total_size/1024:.1f} KB)[/blue]")
 
     except Exception as e:
         console.print(f"[red]Error updating documentation: {str(e)}[/red]")
