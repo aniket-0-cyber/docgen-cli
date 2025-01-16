@@ -364,15 +364,20 @@ app.command(name="c", help="Alias for clean command")(clean)
 
 @app.command(name="clear-cache")
 def clean_cache():
-    """Clean the documentation cache."""
+    """Clean all documentation caches including generation and update caches."""
     try:
         cache_dir = Path.home() / '.docgen' / 'cache'
         if cache_dir.exists():
-            # Remove all cache files
-            for cache_file in cache_dir.glob('*.json'):
-                cache_file.unlink()
+            # Remove all files and subdirectories in cache
+            for item in cache_dir.glob('**/*'):
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    for subitem in item.glob('*'):
+                        subitem.unlink()
+                    item.rmdir()
             cache_dir.rmdir()
-            console.print("[green]Cache cleaned successfully![/green]")
+            console.print("[green]All caches cleaned successfully![/green]")
         else:
             console.print("[yellow]Cache directory doesn't exist.[/yellow]")
     except Exception as e:
