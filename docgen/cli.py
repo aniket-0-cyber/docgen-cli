@@ -203,7 +203,7 @@ async def _generate_async(
             console.print("[red]Monthly usage limit exceeded![/red]")
             console.print("To continue using DocGen, please:")
             console.print("1. Get an API key at: https://your-website.com/get-api-key")
-            console.print("2. Run: docgen auth login --key YOUR_API_KEY")
+            console.print("2. Run: docgen auth login --key=YOUR_API_KEY")
             return
         
         

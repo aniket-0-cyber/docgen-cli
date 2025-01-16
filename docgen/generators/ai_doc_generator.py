@@ -73,13 +73,8 @@ class AIDocGenerator:
                     self._cache_hits += 1
                     results[path] = doc
                     continue
-
-                if template_doc is None:
-                    doc = self._generate_doc(analysis, code)
-                    template_doc = doc
-                    self._api_calls += 1
-                else:
-                    doc = self._adapt_template(template_doc, analysis, code)
+                doc = self._generate_doc(analysis, code)
+                self._api_calls += 1
                 
                 self._save_to_cache(cache_key, doc)
                 results[path] = doc
@@ -191,9 +186,11 @@ class AIDocGenerator:
         except Exception as e:
             self.console.print(f"[yellow]Warning: Failed to cache documentation: {str(e)}[/yellow]") 
 
-    def _fast_cache_key(self, code: str, analysis: Dict) -> str:
+    def _fast_cache_key(self, code: str, analysis: Dict, query: bool=False) -> str:
         """Faster cache key generation."""
         key_content = f"{code[:100]}{str(analysis.get('classes', []))}{str(analysis.get('functions', []))}"
+        if query:
+            key_content += f"update"
         return hashlib.md5(key_content.encode()).hexdigest() 
     
     @sleep_and_retry
@@ -260,11 +257,10 @@ class AIDocGenerator:
     def _process_update_group(self, group: List[Tuple[Path, Dict, str, str]]) -> Dict[Path, str]:
         """Process a group of similar files for updates."""
         results = {}
-        template_doc = None
         
         for path, analysis, code, changes in group:
             try:
-                cache_key = self._fast_cache_key(code + changes, analysis)
+                cache_key = self._fast_cache_key(code + changes, analysis, query=True)
                 doc = self._get_cached_doc(cache_key)
                 
                 if doc:
@@ -272,12 +268,8 @@ class AIDocGenerator:
                     results[path] = doc
                     continue
 
-                if template_doc is None:
-                    doc = self._generate_update_doc(analysis, code, changes)
-                    template_doc = doc
-                    self._api_calls += 1
-                else:
-                    doc = self._adapt_template(template_doc, analysis, code)
+                doc = self._generate_update_doc(analysis, code, changes)
+                self._api_calls += 1
                 
                 self._save_to_cache(cache_key, doc)
                 results[path] = doc

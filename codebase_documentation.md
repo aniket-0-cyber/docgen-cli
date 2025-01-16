@@ -1,6 +1,67 @@
 
 # Recent Updates
 
+## Documentation Update (2025-01-16 13:16:02)
+
+### Changed Files:
+- docgen/cli.py
+- docgen/generators/ai_doc_generator.py
+
+### Updates:
+
+#### docgen/cli.py
+1. **Modified Feature:**  The `docgen auth login` command invocation instruction within the usage limit exceeded message in the `_generate_async` function has been updated.
+
+
+2. **Usage Example (Illustrative):** The change doesn't affect usage; the error message is updated.  Before:  `2. Run: docgen auth login --key YOUR_API_KEY` After: `2. Run: docgen auth login --key=YOUR_API_KEY`
+
+
+3. **Important Notes:** The `--key` option in the `docgen auth login` command now requires an equals sign (`=`) before the API key value for correct parsing.  This is a minor update to command-line argument handling for consistency.
+
+---
+
+#### docgen/generators/ai_doc_generator.py
+## Code Changes: AIDocGenerator Class
+
+1. **Removed Template-Based Documentation Adaptation:** The `_process_file_group` and `_process_update_group` methods no longer use templates to adapt documentation for similar files.  Instead, they generate documentation individually for each file using  `_generate_doc` and `_generate_update_doc` respectively. This eliminates the previous behavior of reusing a template and applying adaptations based on detected class and function names.  The `_adapt_template` function is now effectively dead code.
+
+
+2. **Modified Cache Key Generation:** The `_fast_cache_key` method now accepts a `query` boolean parameter.  If `query` is `True` (as used in update processing),  "update" is appended to the key content, distinguishing update documentation from the original documentation in the cache. This ensures that updates are cached separately.
+
+3. **Simplified Update Documentation Generation:** The logic in `_process_file_group` and `_process_update_group` is simplified to generate documentation directly for each file rather than trying to reuse a template.
+
+
+
+**Simple Usage Example (Illustrative - adapt to your specific file data):**
+
+```python
+generator = AIDocGenerator()
+files_data = [
+    (Path("file1.py"), {"classes": [{"name": "ClassA"}], "functions": []}, "code1"),  # Example file data
+    (Path("file2.py"), {"classes": [{"name": "ClassB"}], "functions": []}, "code2"),
+]
+
+# Generate documentation for original files
+results = asyncio.run(generator.generate_documentation_batch(files_data))
+print(results)
+
+update_files_data = [
+    (Path("file1.py"), {"classes": [{"name": "ClassA"}], "functions": []}, "code1", "updated code"), #Example file data with changes
+    (Path("file2.py"), {"classes": [{"name": "ClassB"}], "functions": []}, "code2", "updated code"),
+]
+update_results = asyncio.run(generator.generate_update_documentation_batch(update_files_data))
+print(update_results)
+```
+
+**Important Notes:**
+
+* The removal of template adaptation may lead to increased API calls and potentially higher costs if many files share similar structures.  The performance implications should be evaluated.
+* The changes simplify the code and reduce complexity, but they sacrifice the potential optimization of using a template for similar files.  The impact on performance should be monitored, especially for large sets of files.
+
+
+---
+
+
 ## Documentation Update (2025-01-15 13:46:01)
 
 ### Changed Files:
