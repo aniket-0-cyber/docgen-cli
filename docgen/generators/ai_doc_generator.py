@@ -85,25 +85,28 @@ class AIDocGenerator:
         return results
 
     async def generate_documentation_batch(self, files_data: List[Tuple[Path, Dict, str]]) -> Dict[Path, str]:
-        results = {}
-        grouped_files = self._group_similar_files(files_data)
-        
-        with ThreadPoolExecutor(max_workers=self.PARALLEL_WORKERS) as executor:
-            futures = []
-            for group in grouped_files:
-                future = executor.submit(self._process_file_group, group)
-                futures.append(future)
+        """Generate documentation for multiple files concurrently."""
+        try:
+            # Prepare batch requests
+            requests = [
+                {
+                    'code': code,
+                    'prompt_type': 'doc'
+                }
+                for _, _, code in files_data
+            ]
             
-            completed = 0
-            total = len(files_data)
-            for future in futures:
-                group_results = future.result()
-                results.update(group_results)
-                completed += len(group_results)
-                
-                if completed % 5 == 0:
-                    self.console.print(f"[green]Processed: {completed}/{total} files[/green]")
-        return results
+            # Generate documentation concurrently
+            results = await self.ai_client.generate_text_batch(requests)
+            
+            # Map results back to files
+            return {
+                path: result for (path, _, _), result in zip(files_data, results)
+                if result is not None
+            }
+            
+        finally:
+            await self.ai_client.close()
 
     def _group_similar_files(self, files_data: List[Tuple[Path, Dict, str]]) -> List[List[Tuple[Path, Dict, str]]]:
         """Group similar files to reduce redundant processing."""
@@ -224,35 +227,39 @@ class AIDocGenerator:
             raise Exception(f"Failed to generate update documentation: {str(e)}")
 
     async def generate_update_documentation_batch(self, files_data: List[Tuple[Path, Dict, str, str]]) -> Dict[Path, str]:
-        """Generate documentation updates for multiple files in batch."""
-        results = {}
-        # Convert 4-tuple to 3-tuple for grouping
-        grouped_files = self._group_similar_files([(p, a, c) for p, a, c, _ in files_data])
-        
-        with ThreadPoolExecutor(max_workers=self.PARALLEL_WORKERS) as executor:
-            futures = []
-            # Reconstruct groups with changes for processing
-            for group in grouped_files:
-                # Match original files with their changes
-                group_with_changes = []
-                for p, a, c in group:
-                    # Find matching original file data with changes
-                    original_data = next(f for f in files_data if f[0] == p)
-                    group_with_changes.append(original_data)
-                
-                future = executor.submit(self._process_update_group, group_with_changes)
-                futures.append(future)
+        """Generate documentation updates for multiple files concurrently."""
+        try:
+            # Filter out files with no changes
+            files_to_process = [
+                (path, analysis, code, changes) 
+                for path, analysis, code, changes in files_data 
+                if changes.strip()
+            ]
             
-            completed = 0
-            total = len(files_data)
-            for future in futures:
-                group_results = future.result()
-                results.update(group_results)
-                completed += len(group_results)
+            if not files_to_process:
+                return {}
                 
-                if completed % 5 == 0:
-                    self.console.print(f"[green]Processed: {completed}/{total} files[/green]")
-        return results
+            # Process files in batches through AI client
+            results = await self.ai_client.generate_update_documentation_batch(files_to_process)
+            
+            # Cache successful results
+            for path, doc in results.items():
+                if not doc.startswith("Error:"):
+                    cache_key = self._fast_cache_key(
+                        next(code for p, _, code, _ in files_to_process if p == path),
+                        next(analysis for p, analysis, _, _ in files_to_process if p == path),
+                        query=True
+                    )
+                    self._save_to_cache(cache_key, doc)
+            
+            return results
+            
+        except Exception as e:
+            self.console.print(f"[red]Error generating batch updates: {str(e)}[/red]")
+            return {
+                path: f"Error: {str(e)}" 
+                for path, _, _, _ in files_data
+            }
 
     def _process_update_group(self, group: List[Tuple[Path, Dict, str, str]]) -> Dict[Path, str]:
         """Process a group of similar files for updates."""

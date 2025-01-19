@@ -438,7 +438,7 @@ async def _update_docs_async(
             console.print("To continue using DocGen, please:")
             console.print("1. Get an API key at: https://your-website.com/get-api-key")
             console.print("2. Run: docgen auth login --key YOUR_API_KEY")
-            raise typer.Exit(1)
+            return
         
         start_time = time.time()
         
@@ -450,8 +450,9 @@ async def _update_docs_async(
             console.print("[yellow]No changes detected[/yellow]")
             return
 
-        base_path = Path.cwd().resolve()
-        output_dir = output_dir.resolve() if output_dir else base_path
+        # Ensure all paths are resolved relative to the project root
+        base_path = Path.cwd()
+        output_dir = output_dir if output_dir else base_path
         
         # Prepare batch data
         files_data = []
@@ -466,13 +467,11 @@ async def _update_docs_async(
                             continue
                             
                         total_size += file_size
-                        abs_path = file_path.resolve()
-                        analyzer = CodeAnalyzer(abs_path)
+                        analyzer = CodeAnalyzer(file_path)
                         analysis_result = analyzer.analyze_file()
-                        rel_path = abs_path.relative_to(base_path)
 
                         files_data.append((
-                            rel_path,
+                            file_path,
                             analysis_result,
                             change_info['full_code'],
                             change_info['changes']
@@ -491,14 +490,14 @@ async def _update_docs_async(
             docs_results = await ai_generator.generate_update_documentation_batch(files_data)
 
         # Handle documentation updates
-        doc_file = (output_dir / "codebase_documentation.md").resolve()
+        doc_file = output_dir / "codebase_documentation.md"
         if full_update:
             if doc_file.exists():
                 update_existing_documentation(doc_file, docs_results, [f[0] for f in files_data])
                 console.print(f"[green]Updated full documentation for {len(files_data)} files[/green]")
         else:
             if updates_file:
-                updates_path = (output_dir / updates_file).resolve()
+                updates_path = output_dir / updates_file
                 if not updates_path.suffix:
                     updates_path = updates_path.with_suffix('.md')
                 add_incremental_update(updates_path, docs_results, files_data, create_if_missing=True)
@@ -540,7 +539,12 @@ def update_existing_documentation(doc_file: Path, docs_results: Dict[Path, str],
         # Update the changes section
         update_index = lines.index("## Recent Updates")
         date_line = f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        changed_files_list = "\n".join(f"- {f.relative_to(Path.cwd())}" for f in changed_files)
+        
+        # Convert paths to strings relative to the current directory
+        base_path = Path.cwd()
+        changed_files_list = "\n".join(
+            f"- {str(f)}" for f in changed_files
+        )
         
         # Insert updates
         lines[update_index + 1] = date_line
@@ -549,8 +553,8 @@ def update_existing_documentation(doc_file: Path, docs_results: Dict[Path, str],
         
         # Update individual file sections
         for file_path, new_doc in docs_results.items():
-            rel_path = file_path.as_posix()
-            file_header = f"## {rel_path}"
+            # Use string path for header
+            file_header = f"## {str(file_path)}"
             try:
                 file_start = next(i for i, line in enumerate(lines) if line.strip() == file_header)
                 file_end = next((i for i, line in enumerate(lines[file_start + 1:], file_start + 1) 
