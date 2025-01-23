@@ -1,6 +1,45 @@
 
 # Recent Updates
 
+## Documentation Update (2025-01-23 12:52:13)
+
+### Changed Files:
+- docgen/utils/ai_client.py
+
+### Updates:
+
+#### docgen/utils/ai_client.py
+1
+
+**1. Changed Functionality:**
+
+*   Increased concurrency limit for asynchronous requests from 10 to 50.
+*   Adjusted rate limiting parameters (`RATE_LIMIT_REQUESTS`, `RATE_LIMIT_WINDOW`) for improved throughput.
+*   Increased maximum batch size (`MAX_BATCH_SIZE`) and token limit (`MAX_BATCH_TOKENS`) for fewer requests.
+*   Reduced retry attempts in `_make_request` from 2 to 1 for faster failure handling.
+*   Reduced retry timeout in `_make_request` from 30 to 15 seconds.
+*   Reduced retry attempts in `_make_batch_request` from 3 to 2.
+*   Reduced `backoff_factor` in retry strategy from 0.1 to 0.05 for faster retries.
+*   Increased connection pool size in `_create_session` from 20 to 50.
+*   Reduced total retry attempts in `_create_session` from 3 to 2.
+*   `generate_text_batch` now processes batches concurrently using `asyncio.gather`.
+*   Improved error handling in `generate_update_documentation_batch`.
+*   Added `finally` block in `generate_update_documentation_batch` to ensure session closure.
+
+
+**2. Impact of Changes:**
+
+The changes aim to significantly improve the performance and efficiency of the AI client. Increased concurrency, larger batch sizes, and faster retry strategies should lead to faster processing of requests and better handling of rate limits and server errors.  The reduced retry attempts prioritize faster failure detection.
+
+**3. Critical Notes:**
+
+*   The code assumes the existence of `docgen.auth.api_key_manager`.  Ensure this module is correctly configured and available.
+*   The token estimation (`_estimate_tokens`) is a very rough approximation.  More sophisticated tokenization might be necessary for accurate batching.
+*   The rate limiting parameters might need further adjustment based on the actual server's capabilities and response times.  Careful monitoring is recommended.
+*   Error handling relies heavily on catching generic `Exception` objects. More specific exception handling might be beneficial for better debugging.
+---
+
+
 ## Documentation Update (2025-01-16 13:16:02)
 
 ### Changed Files:

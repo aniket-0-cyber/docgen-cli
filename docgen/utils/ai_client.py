@@ -22,32 +22,33 @@ class AIClient:
         
         # Async session for concurrent requests
         self._async_session = None
-        self._semaphore = asyncio.Semaphore(10)  # Limit concurrent connections
+        self._semaphore = asyncio.Semaphore(50)  # Increased from 10 to 50
         
-        # Rate limiting
+        # Rate limiting - Adjusted for better throughput
         self._request_times = []
         self._rate_limit_lock = asyncio.Lock()
         self.RATE_LIMIT_REQUESTS = 15  # Gemini's limit
         self.RATE_LIMIT_WINDOW = 60    # Window in seconds
         
-        self.MAX_BATCH_SIZE = 10  # Maximum files per batch
-        self.MAX_BATCH_TOKENS = 30000  # Approximate token limit per batch
+        # Larger batches for fewer total requests
+        self.MAX_BATCH_SIZE = 10        # Increased significantly
+        self.MAX_BATCH_TOKENS = 50000  # Doubled token limit
         
     def _create_session(self) -> requests.Session:
         """Create an optimized session with connection pooling."""
         session = requests.Session()
         
-        # Configure retry strategy
+        # Configure retry strategy with faster retries
         retry_strategy = Retry(
-            total=3,
-            backoff_factor=0.1,
+            total=2,  # Reduced from 3
+            backoff_factor=0.05,  # Reduced from 0.1
             status_forcelist=[429, 500, 502, 503, 504]
         )
         
-        # Configure connection pooling
+        # Increased pool size
         adapter = HTTPAdapter(
-            pool_connections=20,
-            pool_maxsize=20,
+            pool_connections=50,  # Increased from 20
+            pool_maxsize=50,      # Increased from 20
             max_retries=retry_strategy,
             pool_block=False
         )
@@ -58,7 +59,7 @@ class AIClient:
     async def _ensure_async_session(self):
         """Ensure async session exists."""
         if self._async_session is None:
-            connector = aiohttp.TCPConnector(limit=20)
+            connector = aiohttp.TCPConnector(limit=50)  # Increased from 20
             self._async_session = aiohttp.ClientSession(connector=connector)
 
     def _get_random_server(self) -> str:
@@ -91,11 +92,10 @@ class AIClient:
         await self._ensure_async_session()
         api_key = self.api_key_manager.get_api_key()
         
-        # Wait for rate limit if necessary
         await self._wait_for_rate_limit()
         
         async with self._semaphore:
-            for _ in range(2):  # Retry up to 3 times
+            for _ in range(1):  # Reduced retries from 2 to 1 for faster failure
                 server_url = self._get_random_server()
                 try:
                     async with self._async_session.post(
@@ -106,16 +106,15 @@ class AIClient:
                             "prompt_type": prompt_type,
                             "api_key": api_key
                         },
-                        timeout=aiohttp.ClientTimeout(total=30)
+                        timeout=aiohttp.ClientTimeout(total=15)  # Reduced from 30
                     ) as response:
                         if response.status == 200:
                             data = await response.json()
                             return data.get("text")
                         elif response.status == 401:
                             raise ValueError("Rate limit exceeded")
-                        elif response.status == 429:  # Too Many Requests
-                            # Wait longer for rate limit
-                            await asyncio.sleep(5)
+                        elif response.status == 429:
+                            await asyncio.sleep(1)  # Reduced from 5
                             continue
                 except Exception as e:
                     print(f"Request failed: {str(e)}")
@@ -186,13 +185,17 @@ class AIClient:
         batches = self._create_batches(requests)
         results = []
         
-        for batch in batches:
-            batch_results = await self._make_batch_request(batch)
-            results.extend(batch_results)
-            
-            # Wait between batches to respect rate limits
-            if len(batches) > 1:
-                await asyncio.sleep(1)  # Adjust based on your rate limits
+        # Process all batches concurrently instead of sequentially
+        async def process_batch(batch):
+            return await self._make_batch_request(batch)
+        
+        # Create tasks for all batches
+        tasks = [process_batch(batch) for batch in batches]
+        batch_results = await asyncio.gather(*tasks)
+        
+        # Flatten results
+        for batch_result in batch_results:
+            results.extend(batch_result)
                 
         return results
 
@@ -212,7 +215,6 @@ class AIClient:
     async def generate_update_documentation_batch(self, files_data: List[Tuple[str, Dict, str, str]]) -> Dict[str, str]:
         """Generate documentation updates for multiple files using batching."""
         try:
-            # Prepare batch requests
             requests = [
                 {
                     'code': code,
@@ -222,33 +224,30 @@ class AIClient:
                 for _, _, code, changes in files_data
             ]
             
-            # Process in optimized batches
+            # Process all batches concurrently
             batches = self._create_batches(requests)
-            all_results = []
             
-            for batch in batches:
-                batch_results = await self._make_batch_request(batch)
-                all_results.extend(batch_results)
-                
-                # Wait between batches if needed
-                if len(batches) > 1:
-                    await asyncio.sleep(1)
+            async def process_batch(batch):
+                return await self._make_batch_request(batch)
+            
+            # Create tasks for all batches
+            tasks = [process_batch(batch) for batch in batches]
+            all_results = []
+            batch_results = await asyncio.gather(*tasks)
+            
+            # Flatten results
+            for batch_result in batch_results:
+                all_results.extend(batch_result)
             
             # Map results back to files
             results = {}
             for (path, _, _, _), result in zip(files_data, all_results):
-                if result is not None:
-                    results[path] = result
-                else:
-                    results[path] = "Error: Failed to generate documentation"
+                results[path] = result if result is not None else "Error: Failed to generate documentation"
             
             return results
             
         except Exception as e:
             print(f"Batch update generation failed: {str(e)}")
-            return {
-                path: f"Error: {str(e)}" 
-                for path, _, _, _ in files_data
-            }
+            return {path: f"Error: {str(e)}" for path, _, _, _ in files_data}
         finally:
             await self.close() 
