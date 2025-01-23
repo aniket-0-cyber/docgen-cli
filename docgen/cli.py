@@ -18,7 +18,7 @@ from docgen.utils.git_utils import GitAnalyzer
 from docgen.utils.extension import SUPPORTED_EXTENSIONS
 from docgen.auth.api_key_manager import APIKeyManager
 from docgen.auth.usage_tracker import UsageTracker
-from docgen.utils.ai_client import AIClient
+# from docgen.utils.ai_client import AIClient
 
 app = typer.Typer(
     help="""

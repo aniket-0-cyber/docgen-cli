@@ -1,6 +1,45 @@
 
 # Recent Updates
 
+## Documentation Update (2025-01-23 13:45:58)
+
+### Changed Files:
+- docgen/cli.py
+- docgen/utils/ai_client.py
+
+### Updates:
+
+#### docgen/cli.py
+1
+
+* **Changed functionality:** The `AIClient` import was commented out (`# from docgen.utils.ai_client import AIClient`).
+
+* **Impact of changes:**  This likely means the AI client interaction has been moved or refactored into a different module.  The `cli.py` file now relies on a different implementation for AI interaction, potentially for improved modularity or to address dependency issues.
+
+* **Critical notes:** None.  The change is a refactoring and does not appear to introduce any critical issues, assuming the functionality is still provided elsewhere.
+---
+
+#### docgen/utils/ai_client.py
+2
+
+* **Changed functionality:**
+    * Added caching mechanism using `hashlib`, `json`, `pathlib`, and `datetime` modules.  A cache directory is created in `~/.docgen/cache`.  Cache entries expire after one day.
+    * Improved rate limiting:  Increased `RATE_LIMIT_REQUESTS` to 15 and maintained `RATE_LIMIT_WINDOW` at 60 seconds.  Adjusted retry logic and backoff factor in the session creation.
+    * Increased concurrency:  Increased the semaphore value to 50 and connection pool sizes to 50.
+    * Batching improved:  Increased `MAX_BATCH_SIZE` and `MAX_BATCH_TOKENS`.
+    * Added error handling for cache read/write operations, including cleanup of corrupted cache files.
+    * `_fast_cache_key` function now includes operation type ('generate' or 'update') to differentiate cache keys.
+    * Added versioning to cached data.
+    * `generate_text_batch` and `generate_update_documentation_batch` now utilize caching.
+    * Retries reduced in `_make_request` for faster failure detection.
+    * Timeout reduced in `_make_request`.
+
+* **Impact of changes:** The changes significantly enhance the performance and efficiency of the AI client.  Batching, concurrency, and caching are implemented to handle larger codebases more effectively and reduce the number of requests to the AI server.  Improved error handling and rate limiting make the system more robust.
+
+* **Critical notes:** The caching mechanism relies on the assumption that the code and analysis results remain relatively stable within a day.  Significant changes within that timeframe might lead to stale cache entries.  The cache key generation should be carefully reviewed to ensure uniqueness and avoid collisions, especially considering the use of only the first 100 characters of code.  The error handling attempts to gracefully handle cache issues, but it's still crucial to monitor for unexpected behavior.  The assumption is that the API supports batch requests (`/api/v1/gemini/generate/batch`).
+---
+
+
 ## Documentation Update (2025-01-23 12:52:13)
 
 ### Changed Files:

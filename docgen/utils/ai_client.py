@@ -7,6 +7,10 @@ import asyncio
 import aiohttp
 from docgen.auth.api_key_manager import APIKeyManager
 import time
+import hashlib
+from pathlib import Path
+import json
+from datetime import datetime, timedelta
 
 class AIClient:
     def __init__(self):
@@ -34,6 +38,11 @@ class AIClient:
         self.MAX_BATCH_SIZE = 10        # Increased significantly
         self.MAX_BATCH_TOKENS = 50000  # Doubled token limit
         
+        # Add cache initialization
+        self.cache_dir = Path.home() / '.docgen' / 'cache'
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_duration = timedelta(days=1)  # Cache expires after 7 days
+
     def _create_session(self) -> requests.Session:
         """Create an optimized session with connection pooling."""
         session = requests.Session()
@@ -180,23 +189,70 @@ class AIClient:
                     continue
         return [None] * len(batch)
 
+    def _fast_cache_key(self, code: str, analysis: Dict, operation: str = 'generate') -> str:
+        """Generate cache key based on code content and operation type."""
+        # Include first 100 chars of code, class/function names, and operation type
+        key_content = (
+            f"{code[:100]}"
+            f"{str(analysis.get('classes', []))}"
+            f"{str(analysis.get('functions', []))}"
+            f"{operation}"  # Add operation type to differentiate generate vs update
+        )
+        return hashlib.md5(key_content.encode()).hexdigest()
+
     async def generate_text_batch(self, requests: List[Dict]) -> List[Optional[str]]:
-        """Generate text for multiple requests using batching."""
-        batches = self._create_batches(requests)
+        """Generate text for multiple requests using batching with caching."""
         results = []
+        uncached_requests = []
+        request_mapping = {}  # Map batch indices to original indices
         
-        # Process all batches concurrently instead of sequentially
-        async def process_batch(batch):
-            return await self._make_batch_request(batch)
+        # Check cache first
+        for i, req in enumerate(requests):
+            cache_key = self._fast_cache_key(
+                req['code'], 
+                req.get('analysis', {}),
+                'generate'
+            )
+            cached_doc = self._get_cached_doc(cache_key)
+            if cached_doc:
+                results.append(cached_doc)
+            else:
+                uncached_requests.append(req)
+                request_mapping[len(uncached_requests) - 1] = i
         
-        # Create tasks for all batches
-        tasks = [process_batch(batch) for batch in batches]
-        batch_results = await asyncio.gather(*tasks)
+        if uncached_requests:
+            # Process uncached requests in batches
+            batches = self._create_batches(uncached_requests)
+            
+            async def process_batch(batch):
+                return await self._make_batch_request(batch)
+            
+            # Create tasks for all batches
+            tasks = [process_batch(batch) for batch in batches]
+            batch_results = await asyncio.gather(*tasks)
+            
+            # Process and cache results
+            flat_results = []
+            for batch_result in batch_results:
+                flat_results.extend(batch_result)
+            
+            # Cache new results and insert them in correct positions
+            final_results = results.copy()
+            for i, result in enumerate(flat_results):
+                if result:
+                    orig_idx = request_mapping[i]
+                    cache_key = self._fast_cache_key(
+                        uncached_requests[i]['code'],
+                        uncached_requests[i].get('analysis', {}),
+                        'generate'
+                    )
+                    self._save_to_cache(cache_key, result)
+                    while len(final_results) <= orig_idx:
+                        final_results.append(None)
+                    final_results[orig_idx] = result
+            
+            return final_results
         
-        # Flatten results
-        for batch_result in batch_results:
-            results.extend(batch_result)
-                
         return results
 
     async def generate_text(self, code: str, changes: Optional[str] = None, prompt_type: str = 'doc') -> Optional[str]:
@@ -213,36 +269,63 @@ class AIClient:
             await self._async_session.close() 
 
     async def generate_update_documentation_batch(self, files_data: List[Tuple[str, Dict, str, str]]) -> Dict[str, str]:
-        """Generate documentation updates for multiple files using batching."""
+        """Generate documentation updates with caching."""
         try:
-            requests = [
-                {
-                    'code': code,
-                    'changes': changes,
-                    'prompt_type': 'update'
-                }
-                for _, _, code, changes in files_data
-            ]
-            
-            # Process all batches concurrently
-            batches = self._create_batches(requests)
-            
-            async def process_batch(batch):
-                return await self._make_batch_request(batch)
-            
-            # Create tasks for all batches
-            tasks = [process_batch(batch) for batch in batches]
-            all_results = []
-            batch_results = await asyncio.gather(*tasks)
-            
-            # Flatten results
-            for batch_result in batch_results:
-                all_results.extend(batch_result)
-            
-            # Map results back to files
             results = {}
-            for (path, _, _, _), result in zip(files_data, all_results):
-                results[path] = result if result is not None else "Error: Failed to generate documentation"
+            uncached_files = []
+            
+            # Check cache first
+            for path, analysis, code, changes in files_data:
+                if not changes.strip():
+                    continue
+                    
+                cache_key = self._fast_cache_key(
+                    changes+code,  # Include changes in cache key for updates
+                    analysis,
+                    'update'
+                )
+                cached_doc = self._get_cached_doc(cache_key)
+                
+                if cached_doc:
+                    results[path] = cached_doc
+                else:
+                    uncached_files.append((path, analysis, code, changes))
+            
+            if uncached_files:
+                # Process uncached files
+                requests = [
+                    {
+                        'code': code,
+                        'changes': changes,
+                        'prompt_type': 'update'
+                    }
+                    for _, _, code, changes in uncached_files
+                ]
+                
+                batches = self._create_batches(requests)
+                
+                async def process_batch(batch):
+                    return await self._make_batch_request(batch)
+                
+                tasks = [process_batch(batch) for batch in batches]
+                batch_results = await asyncio.gather(*tasks)
+                
+                # Process and cache new results
+                all_results = []
+                for batch_result in batch_results:
+                    all_results.extend(batch_result)
+                
+                for (path, analysis, code, changes), result in zip(uncached_files, all_results):
+                    if result:
+                        cache_key = self._fast_cache_key(
+                            changes+code,
+                            analysis,
+                            'update'
+                        )
+                        self._save_to_cache(cache_key, result)
+                        results[path] = result
+                    else:
+                        results[path] = "Error: Failed to generate documentation"
             
             return results
             
@@ -251,3 +334,74 @@ class AIClient:
             return {path: f"Error: {str(e)}" for path, _, _, _ in files_data}
         finally:
             await self.close() 
+
+    def _get_cached_doc(self, cache_key: str) -> Optional[str]:
+        """Retrieve cached documentation if it exists and is valid."""
+        try:
+            cache_file = self.cache_dir / f"{cache_key}.json"
+            if not cache_file.exists():
+                return None
+                
+            cache_data = json.loads(cache_file.read_text())
+            # Check if cache data has the expected structure
+            if not isinstance(cache_data, dict) or 'content' not in cache_data or 'timestamp' not in cache_data:
+                # Invalid cache data, remove it
+                cache_file.unlink()
+                return None
+                
+            cached_time = datetime.fromisoformat(cache_data['timestamp'])
+            
+            # Check if cache is still valid
+            if datetime.now() - cached_time <= self.cache_duration:
+                return cache_data.get('content')
+            
+            # Remove expired cache
+            cache_file.unlink()
+            return None
+            
+        except Exception as e:
+            # If there's an error, clean up the corrupted cache file
+            try:
+                if cache_file.exists():
+                    cache_file.unlink()
+            except:
+                pass
+            print(f"Cache read error for key {cache_key}: {str(e)}")
+            return None
+
+    def _save_to_cache(self, cache_key: str, content: str) -> None:
+        """Save documentation to cache."""
+        try:
+            if not content or not isinstance(content, str):
+                return  # Don't cache invalid content
+                
+            cache_file = self.cache_dir / f"{cache_key}.json"
+            cache_data = {
+                'content': content,
+                'timestamp': datetime.now().isoformat(),
+                'version': '1.0'  # Adding version for future compatibility
+            }
+            
+            # Write to temporary file first
+            temp_file = cache_file.with_suffix('.tmp')
+            temp_file.write_text(json.dumps(cache_data, ensure_ascii=False, indent=2))
+            
+            # Then rename to final filename (atomic operation)
+            temp_file.replace(cache_file)
+            
+        except Exception as e:
+            print(f"Cache write error for key {cache_key}: {str(e)}")
+            # Clean up temporary file if it exists
+            try:
+                if temp_file.exists():
+                    temp_file.unlink()
+            except:
+                pass
+
+    def _clear_cache(self) -> None:
+        """Clear all cached documentation."""
+        try:
+            for cache_file in self.cache_dir.glob('*.json'):
+                cache_file.unlink()
+        except Exception as e:
+            print(f"Cache clear error: {str(e)}") 
