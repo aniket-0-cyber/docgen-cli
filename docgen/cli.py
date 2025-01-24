@@ -18,6 +18,7 @@ from docgen.utils.git_utils import GitAnalyzer
 from docgen.utils.extension import SUPPORTED_EXTENSIONS
 from docgen.auth.api_key_manager import APIKeyManager
 from docgen.auth.usage_tracker import UsageTracker
+# from docgen.utils.ai_client import AIClient
 
 app = typer.Typer(
     help="""
@@ -75,10 +76,32 @@ def _show_api_key_instructions():
 async def process_file(path: Path, output_format: str, output_dir: Optional[Path] = None) -> None:
     """Process any source code file and generate documentation."""
     try:
+        # Verify file exists and is readable
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+            
+        # Read file content with proper encoding
+        try:
+            source_code = path.read_text(encoding='utf-8')
+        except UnicodeDecodeError:
+            try:
+                source_code = path.read_text(encoding='latin-1')
+            except Exception:
+                console.print(f"[red]Error: Unable to read file {path}[/red]")
+                return
+            
+        if not source_code.strip():
+            console.print(f"[yellow]Warning: Empty file {path}[/yellow]")
+            return
+            
+        # Analyze code
         analyzer = CodeAnalyzer(path)
         analysis_result = analyzer.analyze_file()
-        source_code = path.read_text()
         
+        if not analysis_result:
+            console.print(f"[yellow]Warning: No analyzable content in {path}[/yellow]")
+            return
+            
         # Generate AI documentation
         ai_generator = AIDocGenerator()
         documentation = await ai_generator.generate_documentation_batch([
@@ -86,15 +109,25 @@ async def process_file(path: Path, output_format: str, output_dir: Optional[Path
         ])
         
         # Get the documentation for the single file
-        doc_content = documentation.get(path, "Error: Documentation generation failed")
-        
+        doc_content = documentation.get(path)
+        if not doc_content or doc_content.startswith("Error:"):
+            console.print(f"[yellow]Warning: {doc_content or 'Failed to generate documentation'} for {path}[/yellow]")
+            return
+            
         # Save documentation
         if output_dir:
             output_path = output_dir / f"{path.stem}.md"
         else:
             output_path = path.with_suffix('.md')
             
-        output_path.write_text(doc_content)
+        # Add file header
+        final_content = [
+            f"# {path.name} Documentation\n",
+            f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n",
+            doc_content
+        ]
+        
+        output_path.write_text("\n".join(final_content))
         console.print(f"[green]Generated AI documentation for {path} -> {output_path}[/green]")
 
     except Exception as e:
@@ -170,7 +203,7 @@ async def _generate_async(
             console.print("[red]Monthly usage limit exceeded![/red]")
             console.print("To continue using DocGen, please:")
             console.print("1. Get an API key at: https://your-website.com/get-api-key")
-            console.print("2. Run: docgen auth login --key YOUR_API_KEY")
+            console.print("2. Run: docgen auth login --key=YOUR_API_KEY")
             return
         
         
@@ -331,15 +364,20 @@ app.command(name="c", help="Alias for clean command")(clean)
 
 @app.command(name="clear-cache")
 def clean_cache():
-    """Clean the documentation cache."""
+    """Clean all documentation caches including generation and update caches."""
     try:
         cache_dir = Path.home() / '.docgen' / 'cache'
         if cache_dir.exists():
-            # Remove all cache files
-            for cache_file in cache_dir.glob('*.json'):
-                cache_file.unlink()
+            # Remove all files and subdirectories in cache
+            for item in cache_dir.glob('**/*'):
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    for subitem in item.glob('*'):
+                        subitem.unlink()
+                    item.rmdir()
             cache_dir.rmdir()
-            console.print("[green]Cache cleaned successfully![/green]")
+            console.print("[green]All caches cleaned successfully![/green]")
         else:
             console.print("[yellow]Cache directory doesn't exist.[/yellow]")
     except Exception as e:
@@ -400,7 +438,9 @@ async def _update_docs_async(
             console.print("To continue using DocGen, please:")
             console.print("1. Get an API key at: https://your-website.com/get-api-key")
             console.print("2. Run: docgen auth login --key YOUR_API_KEY")
-            raise typer.Exit(1)
+            return
+        
+        start_time = time.time()
         
         # Get changed files
         git_analyzer = GitAnalyzer()
@@ -410,53 +450,56 @@ async def _update_docs_async(
             console.print("[yellow]No changes detected[/yellow]")
             return
 
-        # Rest of the existing update code...
-        base_path = Path.cwd().resolve()
-        output_dir = output_dir.resolve() if output_dir else base_path
+        # Ensure all paths are resolved relative to the project root
+        base_path = Path.cwd()
+        output_dir = output_dir if output_dir else base_path
         
-        updates_path = None
-        if updates_file:
-            updates_path = (output_dir / updates_file).resolve()
-            if not updates_path.suffix:
-                updates_path = updates_path.with_suffix('.md')
-        
-        # Process changed files
+        # Prepare batch data
         files_data = []
-        docs_results = {}
-        
-        for file_path, change_info in changed_files.items():
-            try:
-                if file_path.exists():
-                    abs_path = file_path.resolve()
-                    analyzer = CodeAnalyzer(abs_path)
-                    analysis_result = analyzer.analyze_file()
-                    rel_path = abs_path.relative_to(base_path)
-                    files_data.append((
-                        rel_path,
-                        analysis_result,
-                        change_info['full_code'],
-                        change_info['changes']
-                    ))
-            except Exception as e:
-                console.print(f"[yellow]Warning: Could not analyze {file_path}: {str(e)}[/yellow]")
-        
-        # Generate documentation
+        total_size = 0
+        with console.status("[bold green]Analyzing changed files...") as status:
+            for file_path, change_info in changed_files.items():
+                try:
+                    if file_path.exists():
+                        file_size = file_path.stat().st_size
+                        if file_size > 2_000_000:  # Skip files larger than 2MB
+                            console.print(f"[yellow]Skipping large file: {file_path}[/yellow]")
+                            continue
+                            
+                        total_size += file_size
+                        analyzer = CodeAnalyzer(file_path)
+                        analysis_result = analyzer.analyze_file()
+
+                        files_data.append((
+                            file_path,
+                            analysis_result,
+                            change_info['full_code'],
+                            change_info['changes']
+                        ))
+                        
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Could not analyze {file_path}: {str(e)}[/yellow]")
+
+        if not files_data:
+            console.print("[yellow]No files to process after analysis[/yellow]")
+            return
+
+        # Generate documentation in batch
         ai_generator = AIDocGenerator()
-        for file_path, analysis, code, changes in files_data:
-            try:
-                doc = await ai_generator.generate_update_documentation(code, changes)
-                docs_results[file_path] = doc
-            except Exception as e:
-                console.print(f"[yellow]Warning: Could not generate update for {file_path}: {str(e)}[/yellow]")
-        
+        with console.status("[bold green]Generating documentation...") as status:
+            docs_results = await ai_generator.generate_update_documentation_batch(files_data)
+
         # Handle documentation updates
-        doc_file = (output_dir / "codebase_documentation.md").resolve()
+        doc_file = output_dir / "codebase_documentation.md"
         if full_update:
             if doc_file.exists():
-                update_existing_documentation(doc_file, docs_results, files_data)
+                update_existing_documentation(doc_file, docs_results, [f[0] for f in files_data])
                 console.print(f"[green]Updated full documentation for {len(files_data)} files[/green]")
         else:
-            if updates_path:
+            if updates_file:
+                updates_path = output_dir / updates_file
+                if not updates_path.suffix:
+                    updates_path = updates_path.with_suffix('.md')
                 add_incremental_update(updates_path, docs_results, files_data, create_if_missing=True)
                 console.print(f"[green]Added updates to {updates_path.name}[/green]")
             elif doc_file.exists():
@@ -468,6 +511,11 @@ async def _update_docs_async(
         
         # Update last documented state
         git_analyzer.update_last_documented_state()
+
+        elapsed_time = time.time() - start_time
+        console.print(f"[green]Documentation updated successfully![/green]")
+        console.print(f"[blue]Time taken: {elapsed_time:.2f} seconds[/blue]")
+        console.print(f"[blue]Processed {len(files_data)} changed files ({total_size/1024:.1f} KB)[/blue]")
 
     except Exception as e:
         console.print(f"[red]Error updating documentation: {str(e)}[/red]")
@@ -491,7 +539,12 @@ def update_existing_documentation(doc_file: Path, docs_results: Dict[Path, str],
         # Update the changes section
         update_index = lines.index("## Recent Updates")
         date_line = f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        changed_files_list = "\n".join(f"- {f.relative_to(Path.cwd())}" for f in changed_files)
+        
+        # Convert paths to strings relative to the current directory
+        base_path = Path.cwd()
+        changed_files_list = "\n".join(
+            f"- {str(f)}" for f in changed_files
+        )
         
         # Insert updates
         lines[update_index + 1] = date_line
@@ -500,8 +553,8 @@ def update_existing_documentation(doc_file: Path, docs_results: Dict[Path, str],
         
         # Update individual file sections
         for file_path, new_doc in docs_results.items():
-            rel_path = file_path.as_posix()
-            file_header = f"## {rel_path}"
+            # Use string path for header
+            file_header = f"## {str(file_path)}"
             try:
                 file_start = next(i for i, line in enumerate(lines) if line.strip() == file_header)
                 file_end = next((i for i, line in enumerate(lines[file_start + 1:], file_start + 1) 
@@ -597,15 +650,15 @@ def auth(
             console.print("Get your API key at: https://your-website.com/get-api-key")
             raise typer.Exit(1)
             
-        if api_key_manager.validate_api_key(api_key):
-            api_key_manager.set_api_key(api_key)
-            console.print("[green]Successfully logged in![/green]")
+        success, plan = api_key_manager.validate_api_key(api_key)
+        if success:
+            console.print(f"[green]Successfully logged in! Plan: {plan.title()}[/green]")
         else:
             console.print("[red]Invalid API key[/red]")
             raise typer.Exit(1)
             
     elif command.lower() == "logout":
-        api_key_manager.set_api_key(None)
+        api_key_manager.set_api_key(None, None)  # Clear both key and plan
         console.print("[green]Successfully logged out[/green]")
         
     else:
@@ -613,33 +666,24 @@ def auth(
         raise typer.Exit(1)
 
 @app.command(name="usage")
-def check_usage():
-    """Check current usage statistics."""
-    usage_tracker = UsageTracker()
-    usage = usage_tracker._load_usage()
+def usage():
+    """Show current usage statistics."""
+    tracker = UsageTracker()
+    usage_data = tracker._load_usage()  # Force reload to get current plan
+    can_request, message = tracker.can_make_request()
     
-    # Get request counts
-    anon_requests = len(usage_tracker._clean_old_requests(usage['anonymous_requests']))
-    auth_requests = len(usage_tracker._clean_old_requests(usage['authenticated_requests']))
+    console.print("\n[bold]Current Usage Statistics[/bold]")
     
-    # Get limits
-    anon_limit = usage_tracker._get_monthly_limit()  # Will get anonymous limit
-    
-    console.print(f"\n[bold]Current Usage Statistics[/bold]")
-    
-    if usage.get('api_key'):
-        auth_limit = usage_tracker._get_monthly_limit()  # Will get authenticated limit
-        console.print(f"Plan: {usage['plan'].title()}")
-        console.print(f"Authenticated requests this month: {auth_requests}/{auth_limit}")
-        console.print(f"Remaining requests: {auth_limit - auth_requests}")
+    if usage_data.get('api_key'):
+        console.print(f"Plan: [green]{usage_data['plan'].title()}[/green] (API Key: {usage_data['api_key'][:8]}...)")
     else:
-        console.print("Plan: Anonymous (No API Key)")
-        console.print(f"Anonymous requests this month: {anon_requests}/{anon_limit}")
-        console.print(f"Remaining requests: {anon_limit - anon_requests}")
-        if anon_requests >= (anon_limit - 5):
-            # Fixed the markup syntax
-            console.print("\n[yellow]⚠️  You're approaching the anonymous usage limit![/yellow]")
-            console.print("[yellow]Get an API key to increase your limit: https://your-website.com/get-api-key[/yellow]")
+        console.print("Plan: [yellow]Anonymous[/yellow] (No API Key)")
+    
+    console.print(message)
+    
+    if not can_request:
+        console.print("[red]You have reached your usage limit![/red]")
+        _show_api_key_instructions()
 
 def main():
     app()

@@ -1,90 +1,64 @@
 from rich.console import Console
-import google.generativeai as genai
 from pathlib import Path
 from typing import Dict, List, Tuple
 import os
 import json
 import hashlib
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
-from dotenv import load_dotenv
 import time
 from ratelimit import limits, sleep_and_retry
+from docgen.auth.api_key_manager import APIKeyManager
+from docgen.utils.ai_client import AIClient
 
-load_dotenv()
 console = Console()
 
 class AIDocGenerator:
     def __init__(self):
-        self.api_key = os.getenv("GOOGLE_API_KEY")
-        if not self.api_key:
-            raise ValueError("Please set GOOGLE_API_KEY environment variable")
-        
-        genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.api_key_manager = APIKeyManager()
+        self.ai_client = AIClient()
         
         # Cache and rate limit settings
         self.cache_dir = Path.home() / '.docgen' / 'cache'
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.CALLS_PER_MINUTE = 14
         self.PERIOD = 60
-        self.last_call = 0
-        self.call_count = 0
-        self.MIN_WAIT_TIME = 5  # minimum wait time in seconds
+        self.MIN_WAIT_TIME = 5
         self.MAX_RETRIES = 3 
         self.BACKOFF_FACTOR = 2 
         
         # Initialize memory cache
         self._memory_cache = {}
-        
-        # Initialize console for status messages
         self.console = Console()
-
-        self.BATCH_SIZE = 5  # Process files in smaller batches
+        self.BATCH_SIZE = 5
         self.PARALLEL_WORKERS = min(multiprocessing.cpu_count(), 4)
         self._cache_hits = 0
         self._api_calls = 0
-
-    def _create_prompt(self, code: str) -> str:
-        """Create a language-agnostic prompt for the AI model."""
-        return f"""
-        Create technical documentation for this code:
-
-        CODE:
-        ```
-        {code}
-        ```
-        
-        Please provide:
-        1. Brief purpose/overview (1-2 sentences max)
-        2. Key functionality (bullet points)
-        3. Usage example (if applicable)
-        4. Important notes (only if changes are critical or important)
-
-        Format in markdown, be short and concise and technical.
-        """
 
     @sleep_and_retry
     @limits(calls=14, period=60)
     def _generate_doc(self, analysis: Dict, code: str) -> str:
         """Generate documentation with better error handling."""
-        retries = 0
-        while retries < self.MAX_RETRIES:
-            try:
-                prompt = self._create_prompt(code)
-                response = self.model.generate_content(prompt)
-                if not response.text:
-                    raise ValueError("Empty response from AI model")
-                return response.text
-            except Exception as e:
-                retries += 1
-                wait_time = self.MIN_WAIT_TIME * (self.BACKOFF_FACTOR ** retries)
-                self.console.print(f"[yellow]Attempt {retries}/{self.MAX_RETRIES} failed. Waiting {wait_time}s...[/yellow]")
-                time.sleep(wait_time)
-                if retries == self.MAX_RETRIES:
-                    raise Exception(f"Failed after {self.MAX_RETRIES} attempts: {str(e)}")
+        try:
+            # Ensure code content is properly formatted
+            if not code or not code.strip():
+                return "Error: Empty code content"
+            
+            # Generate documentation using AI
+            response = self.ai_client.generate_text(code=code, prompt_type='doc')
+            if not response:
+                raise ValueError("Empty response from AI model")
+            return response
+            
+        except Exception as e:
+            retries += 1
+            wait_time = self.MIN_WAIT_TIME * (self.BACKOFF_FACTOR ** retries)
+            self.console.print(f"[yellow]Attempt {retries}/{self.MAX_RETRIES} failed. Waiting {wait_time}s...[/yellow]")
+            time.sleep(wait_time)
+            if retries == self.MAX_RETRIES:
+                raise Exception(f"Failed after {self.MAX_RETRIES} attempts: {str(e)}")
 
     def _process_file_group(self, group: List[Tuple[Path, Dict, str]]) -> Dict[Path, str]:
         results = {}
@@ -92,7 +66,6 @@ class AIDocGenerator:
         
         for path, analysis, code in group:
             try:
-                # Fast cache check
                 cache_key = self._fast_cache_key(code, analysis)
                 doc = self._get_cached_doc(cache_key)
                 
@@ -100,13 +73,8 @@ class AIDocGenerator:
                     self._cache_hits += 1
                     results[path] = doc
                     continue
-
-                if template_doc is None:
-                    doc = self._generate_doc(analysis, code)
-                    template_doc = doc
-                    self._api_calls += 1
-                else:
-                    doc = self._adapt_template(template_doc, analysis, code)
+                doc = self._generate_doc(analysis, code)
+                self._api_calls += 1
                 
                 self._save_to_cache(cache_key, doc)
                 results[path] = doc
@@ -117,25 +85,28 @@ class AIDocGenerator:
         return results
 
     async def generate_documentation_batch(self, files_data: List[Tuple[Path, Dict, str]]) -> Dict[Path, str]:
-        results = {}
-        grouped_files = self._group_similar_files(files_data)
-        
-        with ThreadPoolExecutor(max_workers=self.PARALLEL_WORKERS) as executor:
-            futures = []
-            for group in grouped_files:
-                future = executor.submit(self._process_file_group, group)
-                futures.append(future)
+        """Generate documentation for multiple files concurrently."""
+        try:
+            # Prepare batch requests
+            requests = [
+                {
+                    'code': code,
+                    'prompt_type': 'doc'
+                }
+                for _, _, code in files_data
+            ]
             
-            completed = 0
-            total = len(files_data)
-            for future in futures:
-                group_results = future.result()
-                results.update(group_results)
-                completed += len(group_results)
-                
-                if completed % 5 == 0:
-                    self.console.print(f"[green]Processed: {completed}/{total} files[/green]")
-        return results
+            # Generate documentation concurrently
+            results = await self.ai_client.generate_text_batch(requests)
+            
+            # Map results back to files
+            return {
+                path: result for (path, _, _), result in zip(files_data, results)
+                if result is not None
+            }
+            
+        finally:
+            await self.ai_client.close()
 
     def _group_similar_files(self, files_data: List[Tuple[Path, Dict, str]]) -> List[List[Tuple[Path, Dict, str]]]:
         """Group similar files to reduce redundant processing."""
@@ -218,39 +189,12 @@ class AIDocGenerator:
         except Exception as e:
             self.console.print(f"[yellow]Warning: Failed to cache documentation: {str(e)}[/yellow]") 
 
-    def _fast_cache_key(self, code: str, analysis: Dict) -> str:
+    def _fast_cache_key(self, code: str, analysis: Dict, query: bool=False) -> str:
         """Faster cache key generation."""
         key_content = f"{code[:100]}{str(analysis.get('classes', []))}{str(analysis.get('functions', []))}"
+        if query:
+            key_content += f"update"
         return hashlib.md5(key_content.encode()).hexdigest() 
-
-    def _create_update_prompt(self, code: str, changes: str) -> str:
-        """Create a prompt specifically for updating documentation based on changes."""
-        return f"""As an expert developer, analyze these code changes and generate focused documentation updates.
-                Focus only on what has changed and its impact. Format in markdown.
-
-                Original Code Context:
-                ```
-                {code}
-                Code Changes (+ for additions, - for deletions):
-                ```
-
-                Changes made:
-                ```
-                {changes}
-                ```
-
-                if there are no changes, then explain the code with below format:
-                Please provide:
-                1. Brief overview (1-2 sentences max)
-                2. Key functionality (bullet points)
-                3. Usage example (if applicable)
-                else:
-                1. Any new or modified or removed features with key functionality changes (bullet points)
-                2. Simple usage example (if applicable)
-                3. Important notes (only if changes are critical or important)
-
-                Format in markdown, be short and concise and technical, focusing only on the changes.
-                """ 
     
     @sleep_and_retry
     @limits(calls=14, period=60)
@@ -259,11 +203,111 @@ class AIDocGenerator:
         try:
             if not changes.strip():
                 return "No significant code changes detected."
-            prompt = self._create_update_prompt(code, changes)
-            response = self.model.generate_content(prompt)
-            
-            if not response or not response.text:
-                raise ValueError("Empty response from AI model")
-            return response.text
+                
+            retries = 0
+            while retries < self.MAX_RETRIES:
+                try:
+                    response = self.ai_client.generate_text(
+                        code=code,
+                        changes=changes,
+                        prompt_type='update'
+                    )
+                    if not response:
+                        raise ValueError("Empty response from AI model")
+                    return response
+                except Exception as e:
+                    retries += 1
+                    wait_time = self.MIN_WAIT_TIME * (self.BACKOFF_FACTOR ** retries)
+                    self.console.print(f"[yellow]Attempt {retries}/{self.MAX_RETRIES} failed. Waiting {wait_time}s...[/yellow]")
+                    time.sleep(wait_time)
+                    if retries == self.MAX_RETRIES:
+                        raise Exception(f"Failed after {self.MAX_RETRIES} attempts: {str(e)}")
+                        
         except Exception as e:
             raise Exception(f"Failed to generate update documentation: {str(e)}")
+
+    async def generate_update_documentation_batch(self, files_data: List[Tuple[Path, Dict, str, str]]) -> Dict[Path, str]:
+        """Generate documentation updates for multiple files concurrently."""
+        try:
+            # Filter out files with no changes
+            files_to_process = [
+                (path, analysis, code, changes) 
+                for path, analysis, code, changes in files_data 
+                if changes.strip()
+            ]
+            
+            if not files_to_process:
+                return {}
+                
+            # Process files in batches through AI client
+            results = await self.ai_client.generate_update_documentation_batch(files_to_process)
+            
+            # Cache successful results
+            for path, doc in results.items():
+                if not doc.startswith("Error:"):
+                    cache_key = self._fast_cache_key(
+                        next(code for p, _, code, _ in files_to_process if p == path),
+                        next(analysis for p, analysis, _, _ in files_to_process if p == path),
+                        query=True
+                    )
+                    self._save_to_cache(cache_key, doc)
+            
+            return results
+            
+        except Exception as e:
+            self.console.print(f"[red]Error generating batch updates: {str(e)}[/red]")
+            return {
+                path: f"Error: {str(e)}" 
+                for path, _, _, _ in files_data
+            }
+
+    def _process_update_group(self, group: List[Tuple[Path, Dict, str, str]]) -> Dict[Path, str]:
+        """Process a group of similar files for updates."""
+        results = {}
+        
+        for path, analysis, code, changes in group:
+            try:
+                cache_key = self._fast_cache_key(code + changes, analysis, query=True)
+                doc = self._get_cached_doc(cache_key)
+                
+                if doc:
+                    self._cache_hits += 1
+                    results[path] = doc
+                    continue
+
+                doc = self._generate_update_doc(analysis, code, changes)
+                self._api_calls += 1
+                
+                self._save_to_cache(cache_key, doc)
+                results[path] = doc
+                
+            except Exception as e:
+                results[path] = f"Error: {str(e)}"
+        
+        return results
+
+    @sleep_and_retry
+    @limits(calls=14, period=60)
+    def _generate_update_doc(self, analysis: Dict, code: str, changes: str) -> str:
+        """Generate documentation for updates with retries."""
+        if not changes.strip():
+            return "No significant code changes detected."
+            
+        retries = 0
+        while retries < self.MAX_RETRIES:
+            try:
+                response = self.ai_client.generate_text(
+                    code=code,
+                    changes=changes,
+                    prompt_type='update'
+                )
+                if not response:
+                    raise ValueError("Empty response from AI model")
+                return response
+            except Exception as e:
+                retries += 1
+                wait_time = self.MIN_WAIT_TIME * (self.BACKOFF_FACTOR ** retries)
+                self.console.print(f"[yellow]Attempt {retries}/{self.MAX_RETRIES} failed. Waiting {wait_time}s...[/yellow]")
+                time.sleep(wait_time)
+                if retries == self.MAX_RETRIES:
+                    raise Exception(f"Failed after {self.MAX_RETRIES} attempts: {str(e)}")
