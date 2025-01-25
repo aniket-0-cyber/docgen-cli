@@ -276,7 +276,7 @@ async def _generate_async(
         # Add table of contents
         for file_path in sorted(source_files):
             rel_path = file_path.relative_to(base_path)
-            combined_docs.append(f"- [{rel_path}](#{rel_path.as_posix().replace('/', '-')})\n")
+            combined_docs.append(f"- [{rel_path}]\n")
 
         # Add file documentation
         for file_path in sorted(source_files):

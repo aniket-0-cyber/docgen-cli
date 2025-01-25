@@ -4,7 +4,7 @@ from pathlib import Path
 
 class MarkdownGenerator:
     def generate_file_documentation(self, analysis_result: Dict, output_path: Optional[Path] = None) -> str:
-        """Generates comprehensive documentation for a Python file."""
+        """Generates comprehensive documentation for a file."""
         doc_parts = []
         
         # Module documentation
@@ -62,7 +62,7 @@ class MarkdownGenerator:
     def _generate_class_markdown(self, class_info: Dict) -> str:
         parts = [
             f"### {class_info['name']}\n",
-            f"```python\nclass {class_info['name']}({', '.join(class_info['bases'])})\n```\n"
+            f"```class {class_info['name']}({', '.join(class_info['bases'])})\n```\n"
         ]
         
         if class_info.get("docstring"):
@@ -87,7 +87,7 @@ class MarkdownGenerator:
         
         parts.extend([
             f"{prefix}{function_info['name']}\n",
-            f"```python\n{signature}\n```\n"
+            f"```{signature}\n```\n"
         ])
         
         # Docstring
@@ -98,7 +98,7 @@ class MarkdownGenerator:
         if function_info.get('source'):
             parts.extend([
                 "**Source:**\n",
-                f"```python\n{function_info['source']}\n```\n"
+                f"```{function_info['source']}\n```\n"
             ])
         
         return "\n".join(parts)
