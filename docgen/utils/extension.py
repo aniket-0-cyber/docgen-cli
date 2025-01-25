@@ -42,7 +42,7 @@ SUPPORTED_EXTENSIONS = [
     '.html', '.htm', '.xhtml', '.css', '.scss', '.sass', '.less', '.styl',
     
     # Database related
-    '.sql', '.sqlite', '.plsql',
+    # '.sql', '.sqlite', '.plsql',
     
     # Other languages
     '.r', '.rmd',          # R
@@ -67,7 +67,7 @@ SUPPORTED_EXTENSIONS = [
     '.vhd', '.vhdl',      # VHDL
     
     # Configuration and data formats
-    '.json', '.yaml', '.yml', '.toml', '.xml', '.proto',
+    # '.json', '.yaml', '.yml', '.toml', '.xml', '.proto',
     
     # Documentation
     # '.md', '.mdx', '.rst', '.asciidoc', '.adoc',
