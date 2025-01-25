@@ -12,7 +12,6 @@ cffi==1.17.1
 charset-normalizer==3.4.1
 click==8.1.8
 cryptography==44.0.0
-docgen-cli @ file:///Users/Shared/Software/Documents/App/docgen-cli
 e==1.4.5
 esprima==4.0.1
 exceptiongroup==1.2.2
