@@ -1,6 +1,46 @@
 
 # Recent Updates
 
+## Documentation Update (2025-01-25 12:08:12)
+
+### Changed Files:
+- docgen/cli.py
+- docgen/generators/markdown_generator.py
+- docgen/utils/ai_client.py
+
+### Updates:
+
+#### docgen/cli.py
+1
+
+* **Changed functionality:** The table of contents generation in the `_generate_async` function was modified.  The links to individual files within the table of contents are now removed.  The anchors remain in place for internal linking within the generated document.
+
+* **Impact of changes:** The generated documentation now has a simpler table of contents, without hyperlinks to each section.  This simplifies the structure, but users will need to manually navigate to the specific file documentation.
+
+* **Critical notes:** No critical notes.  This change is primarily stylistic and might affect user experience if they relied on the previous linked table of contents.
+---
+
+#### docgen/generators/markdown_generator.py
+2
+
+* **Changed functionality:** The docstrings for `generate_file_documentation`, `_generate_class_markdown`, and `_generate_function_markdown` have been updated for clarity.  The language-specific code fences (```python```) in `_generate_class_markdown` and `_generate_function_markdown` have been removed, making the generated markdown more generic.
+
+* **Impact of changes:** The functions now generate more generic markdown, not specifically tailored to Python.  The docstrings are improved for better understanding.
+
+* **Critical notes:** No critical notes.  The change in code fences allows for broader language support but may require adjustments if the target is specifically Python markdown.
+---
+
+#### docgen/utils/ai_client.py
+3
+
+* **Changed functionality:** The `base_urls` in the `AIClient` class initializer have been changed from localhost ports to a set of specific IP addresses and ports.
+
+* **Impact of changes:** The AI client now connects to a specific set of remote servers instead of a locally running server.  This requires the remote servers to be available and correctly configured.
+
+* **Critical notes:** This change fundamentally alters the deployment and requires access to the specified external servers.  The previous localhost setup is removed.  Error handling and connection management are critical to ensure robust operation.
+---
+
+
 ## Documentation Update (2025-01-23 13:45:58)
 
 ### Changed Files:

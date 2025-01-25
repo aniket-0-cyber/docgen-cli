@@ -16,8 +16,10 @@ class AIClient:
     def __init__(self):
         # Server pool configuration
         self.base_urls = [
-            f"http://localhost:{port}" 
-            for port in range(8000, 8012)  # Ports 8000-8011
+            "http://147.182.206.42:8000",
+            "http://147.182.206.42:8001",
+            "http://147.182.206.16:8002",
+            "http://147.182.206.16:8003",
         ]
         self.api_key_manager = APIKeyManager()
         
