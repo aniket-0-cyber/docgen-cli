@@ -18,6 +18,7 @@ from docgen.utils.git_utils import GitAnalyzer
 from docgen.utils.extension import SUPPORTED_EXTENSIONS
 from docgen.auth.api_key_manager import APIKeyManager
 from docgen.auth.usage_tracker import UsageTracker
+import requests
 # from docgen.utils.ai_client import AIClient
 
 app = typer.Typer(
@@ -643,6 +644,7 @@ def auth(
 ):
     """Manage authentication."""
     api_key_manager = APIKeyManager()
+    tracker = UsageTracker()
     
     if command.lower() == "login":
         if not api_key:
@@ -658,8 +660,27 @@ def auth(
             raise typer.Exit(1)
             
     elif command.lower() == "logout":
-        api_key_manager.set_api_key(None, None)  # Clear both key and plan
-        console.print("[green]Successfully logged out[/green]")
+        try:
+            # Send logout request to server
+            response = requests.post(
+                "http://0.0.0.0:8000/api/v1/auth/logout-key",
+                headers={
+                    'x-machine-id': tracker.machine_id,
+                    'x-api-key': api_key_manager.get_api_key()
+                }
+            )
+            
+            if response.status_code == 200:
+                # Clear local API key and plan
+                api_key_manager.set_api_key(None)
+                console.print("[green]Successfully logged out[/green]")
+            else:
+                console.print("[red]Error logging out from server[/red]")
+                raise typer.Exit(1)
+                
+        except Exception as e:
+            console.print(f"[red]Error during logout: {str(e)}[/red]")
+            raise typer.Exit(1)
         
     else:
         console.print("[red]Invalid command. Use 'login' or 'logout'[/red]")
@@ -669,21 +690,31 @@ def auth(
 def usage():
     """Show current usage statistics."""
     tracker = UsageTracker()
-    usage_data = tracker._load_usage()  # Force reload to get current plan
-    can_request, message = tracker.can_make_request()
     
-    console.print("\n[bold]Current Usage Statistics[/bold]")
-    
-    if usage_data.get('api_key'):
-        console.print(f"Plan: [green]{usage_data['plan'].title()}[/green] (API Key: {usage_data['api_key'][:8]}...)")
-    else:
-        console.print("Plan: [yellow]Anonymous[/yellow] (No API Key)")
-    
-    console.print(message)
-    
-    if not can_request:
-        console.print("[red]You have reached your usage limit![/red]")
-        _show_api_key_instructions()
+    try:
+        response = requests.get(
+            "http://0.0.0.0:8000/api/v1/usage/check",
+            headers={
+                'x-machine-id': tracker.machine_id,
+                'x-api-key': tracker.api_key_manager.get_api_key()
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            console.print("\n[bold]Current Usage Statistics[/bold]")
+            console.print(f"Plan: [green]{data['plan'].title()}[/green]")
+            console.print(f"Current Usage: {data['current_usage']}/{data['limit']}")
+            console.print(f"Remaining: {data['remaining']}")
+            
+            if data['remaining'] <= 0:
+                console.print("[red]You have reached your usage limit![/red]")
+                _show_api_key_instructions()
+        else:
+            console.print("[red]Error fetching usage statistics[/red]")
+            
+    except Exception as e:
+        console.print(f"[red]Error: Could not fetch usage statistics: {str(e)}[/red]")
 
 def main():
     app()

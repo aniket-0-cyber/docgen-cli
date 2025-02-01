@@ -1,6 +1,79 @@
 
 # Recent Updates
 
+## Documentation Update (2025-02-01 05:48:03)
+
+### Changed Files:
+- docgen/auth/api_key_manager.py
+- docgen/auth/usage_tracker.py
+- docgen/cli.py
+- docgen/utils/ai_client.py
+- backend/src/models/usage.py
+- docgen/utils/machine_utils.py
+
+### Updates:
+
+#### docgen/auth/api_key_manager.py
+1
+
+1. **Changed functionality:** The `config.json` file is now used instead of `auth.json`. The `set_api_key` and `validate_api_key` methods have been simplified; they no longer store the plan or verification timestamp.  The `validate_api_key` function now includes the `machine_id` in the validation request.
+
+2. **Impact of changes:** The code is now cleaner and more focused on core API key management.  The removal of plan and timestamp storage simplifies the configuration file. The inclusion of `machine_id` in validation enhances security.
+
+3. **Critical notes:**  The hardcoded API URL (`http://0.0.0.0:8000/api/v1/auth/verify-key`) should be replaced with a configurable or environment variable for production use. Error handling in `_load_config` is rudimentary and could be improved for better robustness.
+---
+
+#### docgen/auth/usage_tracker.py
+2
+
+1. **Changed functionality:** The entire usage tracking mechanism has been changed from local file-based tracking with encryption to relying entirely on a remote server API (`http://0.0.0.0:8000/api/v1/usage`).  All local storage and encryption related code has been removed.
+
+2. **Impact of changes:**  The code is significantly simplified.  All usage tracking logic is now handled by the server, removing the need for local file management and encryption. This simplifies the client-side code and improves maintainability.  However, it introduces a dependency on the availability and correctness of the remote server.
+
+3. **Critical notes:** The reliance on a remote server for usage tracking is a significant change.  The server's availability and reliability directly impact the functionality of this code. Robust error handling and fallback mechanisms should be implemented to handle server unavailability.  The hardcoded API URL (`http://0.0.0.0:8000/api/v1/usage`) needs to be replaced with a configurable or environment variable for production use.
+---
+
+#### docgen/cli.py
+3
+
+1. **Changed functionality:** Added `import requests` to the top of the file to ensure that the `requests` library is available for use. Updated the `usage` command to fetch usage statistics directly from the server via HTTP requests, removing reliance on the local `UsageTracker`'s internal state.
+
+2. **Impact of changes:** The `usage` command now directly reflects the server's view of usage, eliminating potential inconsistencies between local and server-side usage data. This improves accuracy and reduces the risk of discrepancies.
+
+3. **Critical notes:** The functionality of the `usage` command is now entirely dependent on the availability and correctness of the server's API.  Error handling around network requests and API responses should be improved to provide more informative error messages to the user.  The server's API endpoint (`http://0.0.0.0:8000/api/v1/usage/check`) needs to be correctly configured and accessible.
+---
+
+#### docgen/utils/ai_client.py
+2
+
+1. **Changed functionality only:** Added `_track_usage` method for tracking API usage.  Various performance optimizations throughout the class, including increased connection pool sizes, reduced retry attempts, and adjusted rate limiting parameters.  Improved cache handling with versioning and more robust error handling during cache read/write operations.  Added cache clearing functionality (`_clear_cache`).
+
+2. **Impact of changes:** The performance optimizations aim to improve throughput and reduce latency. The `_track_usage` method adds API usage tracking capabilities. The cache improvements enhance reliability and data integrity. The addition of cache clearing provides a mechanism for cache management.
+
+3. **Critical notes:** The changes to rate limiting and retry strategies might need careful monitoring to ensure they don't introduce unintended consequences, such as exceeding API limits or masking actual errors.  The usage tracking endpoint ("http://0.0.0.0:8000/api/v1/usage/track") uses a localhost address which is not suitable for production.  The cache uses a simple file-based approach which may not scale well for very large caches.
+---
+
+#### backend/src/models/usage.py
+3
+
+1. **Changed functionality only:** No changes detected in the provided diff. The file content is identical in both the original and changed code snippets.
+
+2. **Impact of changes:** No impact, as there were no changes.
+
+3. **Critical notes:** The provided diff shows no changes.  It's possible the diff is incorrect or incomplete.
+---
+
+#### docgen/utils/machine_utils.py
+3
+
+1. **Changed functionality:** No functional changes were made to the code.  The provided "Changes" section shows identical code.
+
+2. **Impact of changes:** No impact.
+
+3. **Critical notes:** The `_get_cpu_info` function for non-Windows systems relies on parsing `/proc/cpuinfo`. This approach might be fragile and could break if the format of `/proc/cpuinfo` changes across different Linux distributions.  More robust parsing or alternative methods should be considered.  Error handling is minimal; more comprehensive error handling would improve robustness.
+---
+
+
 ## Documentation Update (2025-01-25 12:08:12)
 
 ### Changed Files:

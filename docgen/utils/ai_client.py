@@ -407,3 +407,22 @@ class AIClient:
                 cache_file.unlink()
         except Exception as e:
             print(f"Cache clear error: {str(e)}") 
+
+    async def _track_usage(self, request_type: str = 'generate') -> None:
+        """Track API usage."""
+        try:
+            headers = {
+                'x-machine-id': self.api_key_manager.machine_id,
+                'x-api-key': self.api_key_manager.get_api_key()
+            }
+            
+            async with self._async_session.post(
+                "http://0.0.0.0:8000/api/v1/usage/track",
+                headers=headers,
+                json={'request_type': request_type},  # Send as JSON body
+                timeout=10
+            ) as response:
+                if response.status != 200:
+                    print(f"Warning: Failed to track usage (status: {response.status})")
+        except Exception as e:
+            print(f"Warning: Could not track usage: {str(e)}") 
