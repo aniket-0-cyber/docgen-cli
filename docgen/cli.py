@@ -245,7 +245,7 @@ async def _generate_async(
                 try:
                     # Skip large files
                     file_size = file_path.stat().st_size
-                    if file_size > 2_000_000:  # Skip files larger than 2MB
+                    if file_size > 1_000_000:  # Skip files larger than 1MB
                         console.print(f"[yellow]Skipping large file: {file_path}[/yellow]")
                         continue
                     

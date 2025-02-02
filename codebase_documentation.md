@@ -1,6 +1,45 @@
 
 # Recent Updates
 
+## Documentation Update (2025-02-02 04:01:15)
+
+### Changed Files:
+- docgen/cli.py
+- docgen/utils/ai_client.py
+
+### Updates:
+
+#### docgen/cli.py
+1
+
+1. **Changed functionality:** The maximum file size limit for skipping large files in the `_generate_async` function within the `generate` command was changed from 2MB to 1MB.
+
+2. **Impact of changes:** This change reduces the processing time for large codebases by skipping even more large files, potentially improving overall performance.  It also conserves API usage by avoiding large requests.
+
+3. **Critical notes:** None.
+---
+
+#### docgen/utils/ai_client.py
+2
+
+1. **Changed functionality:**
+    * The `_estimate_tokens` function now uses a more accurate token estimation method (4 characters per token) instead of word count.
+    * The retry mechanism in `_make_batch_request` has been simplified, removing unnecessary retries for faster failure handling.  The loop in `_make_request` was also reduced to a single attempt.
+    * The `_make_batch_request` function now explicitly handles cases where the server returns more or fewer results than requested, ensuring a consistent response size.  It adds padding or trims results as needed.
+    * Added a cache mechanism using MD5 hashing to store and retrieve generated documentation, significantly improving performance for repeated runs on unchanged code.  The cache expires after one day.  The cache key now includes the operation type ('generate' or 'update').
+    * The `generate_update_documentation_batch` function now includes changes in the cache key for updates, ensuring that updates are correctly cached and retrieved.
+    * Increased concurrency limits (semaphore, connector limits, pool sizes) for improved throughput.
+    * Reduced retry parameters and backoff factor in `_create_session` for faster retries.
+    * Added versioning to the cache file for future compatibility.
+    * Improved error handling in `_get_cached_doc` and `_save_to_cache` including cleanup of corrupted cache files and temporary files.
+    * Added usage tracking to monitor API calls.
+
+2. **Impact of changes:** These changes significantly improve the performance and efficiency of the AI client. Batching, caching, and optimized request handling reduce the number of requests to the AI server and improve overall response times, especially for larger codebases.  More robust error handling and cache management enhance reliability.
+
+3. **Critical notes:** The accuracy of token estimation still relies on a simplification (4 characters per token).  The cache mechanism assumes a specific structure for cached data.  Improperly formatted cache data will be deleted.  The usage tracking depends on the availability of the specified URL.
+---
+
+
 ## Documentation Update (2025-02-01 05:48:03)
 
 ### Changed Files:

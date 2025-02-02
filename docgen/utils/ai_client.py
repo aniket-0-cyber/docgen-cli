@@ -133,8 +133,9 @@ class AIClient:
         return None
 
     def _estimate_tokens(self, code: str) -> int:
-        """Rough estimation of tokens in code."""
-        return len(code.split())
+        """Rough estimation of tokens in code.
+        Uses the same estimation as server: 4 characters per token."""
+        return len(code) // 4
         
     def _create_batches(self, requests: List[Dict]) -> List[List[Dict]]:
         """Create optimal batches based on file sizes."""
@@ -169,27 +170,38 @@ class AIClient:
         await self._wait_for_rate_limit()
         
         async with self._semaphore:
-            for _ in range(2):  # Retry up to 3 times
+            try:
                 server_url = self._get_random_server()
-                try:
-                    async with self._async_session.post(
-                        f"{server_url}/api/v1/gemini/generate/batch",
-                        json={
-                            "files": batch,
-                            "api_key": api_key
-                        },
-                        timeout=aiohttp.ClientTimeout(total=30)
-                    ) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            return data.get("texts", [])
-                        elif response.status == 429:  # Too Many Requests
-                            await asyncio.sleep(5)
-                            continue
-                except Exception as e:
-                    print(f"Batch request failed: {str(e)}")
-                    continue
-        return [None] * len(batch)
+                async with self._async_session.post(
+                    f"{server_url}/api/v1/gemini/generate/batch",
+                    json={
+                        "files": batch,
+                        "api_key": api_key
+                    },
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        results = data.get("texts", [])
+                        
+                        # Debug logging
+                        # print(f"Batch details:")
+                        # print(f"Input batch size: {len(batch)}")
+                        # print(f"Response size: {len(results)}")
+                        
+                        # Always ensure we return exactly the number of results we requested
+                        if len(results) > len(batch):
+                            # print(f"Trimming extra result from server")
+                            results = results[:len(batch)]
+                        elif len(results) < len(batch):
+                            # print(f"Padding missing results")
+                            results.extend([None] * (len(batch) - len(results)))
+                            
+                        return results
+                        
+            except Exception as e:
+                print(f"Batch request failed: {str(e)}")
+            return [None] * len(batch)
 
     def _fast_cache_key(self, code: str, analysis: Dict, operation: str = 'generate') -> str:
         """Generate cache key based on code content and operation type."""
