@@ -44,7 +44,7 @@ class APIKeyManager:
         try:
             response = requests.post(
                 f"{URLConfig.AUTH_BASE_URL}/verify-key",
-                json={'api_key': api_key},
+                json={'api_key': api_key, 'machine_id': self.machine_id},
                 timeout=10
             )
             if response.status_code == 200:
