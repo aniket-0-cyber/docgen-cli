@@ -18,6 +18,8 @@ from docgen.utils.git_utils import GitAnalyzer
 from docgen.utils.extension import SUPPORTED_EXTENSIONS
 from docgen.auth.api_key_manager import APIKeyManager
 from docgen.auth.usage_tracker import UsageTracker
+import requests
+from docgen.config.urls import URLConfig
 # from docgen.utils.ai_client import AIClient
 
 app = typer.Typer(
@@ -66,11 +68,10 @@ console = Console()
 class APIKeyRequired(Exception):
     """Raised when API key is missing or invalid."""
     pass
-
 def _show_api_key_instructions():
     """Helper function to show API key instructions."""
     console.print("\nTo increase your limit, please:")
-    console.print("1. Get an API key at: https://your-website.com/get-api-key")
+    console.print(f"1. Get an API key at: {URLConfig.AUTH_BASE_URL}/get-api-key")
     console.print("2. Run: docgen auth login --key YOUR_API_KEY")
 
 async def process_file(path: Path, output_format: str, output_dir: Optional[Path] = None) -> None:
@@ -206,6 +207,9 @@ async def _generate_async(
             console.print("2. Run: docgen auth login --key=YOUR_API_KEY")
             return
         
+        # Create a new status for file analysis
+        analysis_status = console.status("[bold green]Analyzing files...", spinner="dots")
+        analysis_status.start()
         
         start_time = time.time()
         base_path = Path.cwd()
@@ -239,13 +243,13 @@ async def _generate_async(
         # Prepare batch processing data
         files_data = []
         total_size = 0
-        with console.status("[bold green]Analyzing files...") as status:
+        
+        try:
             for file_path in source_files:
                 try:
                     # Skip large files
                     file_size = file_path.stat().st_size
-                    if file_size > 2_000_000:  # Skip files larger than 2MB
-                        console.print(f"[yellow]Skipping large file: {file_path}[/yellow]")
+                    if file_size > 1_000_000:  # Skip files larger than 1MB
                         continue
                     
                     total_size += file_size
@@ -254,12 +258,19 @@ async def _generate_async(
                     analysis_result = analyzer.analyze_file()
                     files_data.append((file_path, analysis_result, source_code))
                 except Exception as e:
-                    console.print(f"[yellow]Warning: Error analyzing {file_path}: {str(e)}[/yellow]")
+                    continue
+        finally:
+            analysis_status.stop()
 
         # Generate documentation asynchronously
-        ai_generator = AIDocGenerator()
-        with console.status("[bold green]Generating documentation...") as status:
+        generation_status = console.status("[bold green]Generating documentation...", spinner="dots")
+        generation_status.start()
+        
+        try:
+            ai_generator = AIDocGenerator()
             docs_results = await ai_generator.generate_documentation_batch(files_data)
+        finally:
+            generation_status.stop()
 
         # Combine documentation
         output_filename = "codebase_documentation.md" if not current_dir else "directory_documentation.md"
@@ -643,6 +654,7 @@ def auth(
 ):
     """Manage authentication."""
     api_key_manager = APIKeyManager()
+    tracker = UsageTracker()
     
     if command.lower() == "login":
         if not api_key:
@@ -658,8 +670,27 @@ def auth(
             raise typer.Exit(1)
             
     elif command.lower() == "logout":
-        api_key_manager.set_api_key(None, None)  # Clear both key and plan
-        console.print("[green]Successfully logged out[/green]")
+        try:
+            # Send logout request to server using URLConfig
+            response = requests.post(
+                f"{URLConfig.AUTH_BASE_URL}/logout-key",
+                headers={
+                    'x-machine-id': tracker.machine_id,
+                    'x-api-key': api_key_manager.get_api_key()
+                }
+            )
+            
+            if response.status_code == 200:
+                # Clear local API key and plan
+                api_key_manager.set_api_key(None)
+                console.print("[green]Successfully logged out[/green]")
+            else:
+                console.print("[red]Error logging out from server[/red]")
+                raise typer.Exit(1)
+                
+        except Exception as e:
+            console.print(f"[red]Error during logout: {str(e)}[/red]")
+            raise typer.Exit(1)
         
     else:
         console.print("[red]Invalid command. Use 'login' or 'logout'[/red]")
@@ -669,21 +700,32 @@ def auth(
 def usage():
     """Show current usage statistics."""
     tracker = UsageTracker()
-    usage_data = tracker._load_usage()  # Force reload to get current plan
-    can_request, message = tracker.can_make_request()
     
-    console.print("\n[bold]Current Usage Statistics[/bold]")
-    
-    if usage_data.get('api_key'):
-        console.print(f"Plan: [green]{usage_data['plan'].title()}[/green] (API Key: {usage_data['api_key'][:8]}...)")
-    else:
-        console.print("Plan: [yellow]Anonymous[/yellow] (No API Key)")
-    
-    console.print(message)
-    
-    if not can_request:
-        console.print("[red]You have reached your usage limit![/red]")
-        _show_api_key_instructions()
+    try:
+        response = requests.get(
+            f"{URLConfig.USAGE_BASE_URL}/check",
+            headers={
+                'x-machine-id': tracker.machine_id,
+                'x-api-key': tracker.api_key_manager.get_api_key()
+            }
+        )
+        print(response.json())
+        
+        if response.status_code == 200:
+            data = response.json()
+            console.print("\n[bold]Current Usage Statistics[/bold]")
+            console.print(f"Plan: [green]{data['plan'].title()}[/green]")
+            console.print(f"Current Usage: {data['current_usage']}/{data['limit']}")
+            console.print(f"Remaining: {data['remaining']}")
+            
+            if data['remaining'] <= 0:
+                console.print("[red]You have reached your usage limit![/red]")
+                _show_api_key_instructions()
+        else:
+            console.print("[red]Error fetching usage statistics[/red]")
+            
+    except Exception as e:
+        console.print(f"[red]Error: Could not fetch usage statistics: {str(e)}[/red]")
 
 def main():
     app()

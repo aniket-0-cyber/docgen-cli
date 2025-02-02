@@ -1,6 +1,216 @@
 
 # Recent Updates
 
+## Documentation Update (2025-02-02 12:22:02)
+
+### Changed Files:
+- docgen/cli.py
+
+### Updates:
+
+#### docgen/cli.py
+1
+
+* **Added status indicators:**  `console.status` is now used to display progress during file analysis and documentation generation, improving user experience.
+* **Improved error handling:** More robust error handling within the `_generate_async` function prevents crashes due to issues with individual files.  Large files (>1MB) are now skipped gracefully.
+* **Refactored code structure:** The code within `_generate_async` is restructured to improve readability and maintainability.  Error handling is now more centralized.
+* **No significant impact on core functionality:** The changes primarily enhance the user experience and the robustness of the `generate` command.
+* **Critical notes:** None.
+---
+
+
+## Documentation Update (2025-02-02 05:58:21)
+
+### Changed Files:
+- backend/src/models/usage.py
+- docgen/auth/api_key_manager.py
+- docgen/auth/usage_tracker.py
+- docgen/cli.py
+- docgen/utils/ai_client.py
+- docgen/config/urls.py
+
+### Updates:
+
+#### backend/src/models/usage.py
+1
+
+1. **Changed functionality only (bullet points):**
+    * Removed `request_type`, `timestamp`, and `count` fields from the `Usage` Pydantic model.
+    * Made `machine_id` a required field (removed `Optional`).
+    * Added `count`, `last_used`, and `created_at` fields to the `Usage` Pydantic model.  `count` defaults to 0, `last_used` and `created_at` are optional.
+
+2. **Impact of changes:** The `Usage` model now tracks different information.  The removal of fields suggests a change in how usage data is recorded and potentially a simplification of the data structure.  The addition of `count`, `last_used`, and `created_at` implies a focus on tracking usage frequency and timestamps.
+
+3. **Critical notes (if any):**  The change might break code relying on the previous structure of the `Usage` model.  Consider backward compatibility if necessary.  The addition of a `count` field may need additional logic to increment it correctly in the application.
+---
+
+#### docgen/auth/api_key_manager.py
+2
+
+1. **Changed functionality only (bullet points):**
+    * Changed the URL used for API key validation from a hardcoded URL (`'http://0.0.0.0:8000/api/v1/auth/verify-key'`) to a dynamically configured URL (`f"{URLConfig.AUTH_BASE_URL}/verify-key"`) using `URLConfig`.
+    * Removed the `machine_id` from the JSON payload sent during API key validation.
+
+2. **Impact of changes:** The API key validation is now more flexible and configurable. The URL for the authentication service can be changed by modifying the `URLConfig` object, improving maintainability and deployment flexibility.  Removing `machine_id` from the validation request simplifies the API interaction.
+
+3. **Critical notes (if any):** Ensure that `URLConfig.AUTH_BASE_URL` is correctly configured.  The removal of `machine_id` from the validation request might affect the server-side logic if it relied on that parameter for identification.  Verify server-side changes to match the new client-side implementation.
+---
+
+#### docgen/auth/usage_tracker.py
+3
+
+1. **Changed functionality only (bullet points):**
+    * Changed the base URL for API calls from a hardcoded URL (`"http://0.0.0.0:8000/api/v1/usage"`) to a dynamically configured URL (`URLConfig.USAGE_BASE_URL`) using `URLConfig`.
+
+2. **Impact of changes:** The usage tracking is now more flexible and configurable.  The URL for the usage tracking service can be changed by modifying the `URLConfig` object, improving maintainability and deployment flexibility.
+
+3. **Critical notes (if any):** Ensure that `URLConfig.USAGE_BASE_URL` is correctly configured.  The change might require updating any deployment or configuration scripts that previously relied on the hardcoded URL.  Verify that the API endpoints at the new URL are correctly implemented and accessible.
+---
+
+#### docgen/cli.py
+1
+
+1. **Changed functionality:** The `_show_api_key_instructions()` function now uses `URLConfig.AUTH_BASE_URL` to dynamically generate the API key retrieval URL instead of a hardcoded URL.  The URLs used in the `generate` and `update` commands for usage limit exceeded messages are now also dynamically generated from `URLConfig`.  The `auth logout` command now sends a logout request to the server using `URLConfig.AUTH_BASE_URL`. The `usage` command now uses `URLConfig.USAGE_BASE_URL` to fetch usage statistics.
+
+2. **Impact of changes:** This improves maintainability and flexibility.  The code is no longer tied to specific URLs, making it easier to update or deploy to different environments.
+
+3. **Critical notes:** None.
+---
+
+#### docgen/utils/ai_client.py
+2
+
+1. **Changed functionality:** The `AIClient` class now uses `URLConfig.SERVER_URLS` to get the AI server URLs instead of hardcoded values. The `_make_request` function's retry logic has been adjusted (reduced retries and timeout), and the rate limiting parameters have been modified (`RATE_LIMIT_REQUESTS`, `RATE_LIMIT_WINDOW`) for improved throughput. The maximum batch size (`MAX_BATCH_SIZE`) and token limit (`MAX_BATCH_TOKENS`) for batch requests have been increased.  The `AIClient` now includes caching functionality using `_get_cached_doc` and `_save_to_cache` methods, utilizing MD5 hashing for cache keys.  The `_track_usage` method is added to track API usage.
+
+
+2. **Impact of changes:** These changes improve the robustness, efficiency, and performance of the AI client.  Increased batch sizes reduce the number of API calls, leading to faster processing. The caching mechanism significantly reduces redundant API requests.  The use of `URLConfig` makes the code more adaptable to different server configurations.  The rate limit adjustments improve throughput while adhering to API constraints.
+
+3. **Critical notes:**  The cache relies on the stability of the MD5 hash for key generation.  Any changes to the code structure used to generate the cache key will invalidate existing cached entries.  Error handling around cache operations should be robust to prevent data corruption.
+---
+
+#### docgen/config/urls.py
+3
+
+1. **Changed functionality:** No functional changes were made to this file in the provided diffs. The file remains unchanged.
+
+2. **Impact of changes:** No impact.
+
+3. **Critical notes:**  The `SERVER_URLS` list hardcodes server addresses.  Consider using environment variables or a configuration file to make this more flexible.  The dependency on the first element of `SERVER_URLS` in `USAGE_BASE_URL` and the third element in `AUTH_BASE_URL` introduces a potential point of failure if the order of servers changes.  Using a more robust method to specify these base URLs would be beneficial.
+---
+
+
+## Documentation Update (2025-02-02 04:01:15)
+
+### Changed Files:
+- docgen/cli.py
+- docgen/utils/ai_client.py
+
+### Updates:
+
+#### docgen/cli.py
+1
+
+1. **Changed functionality:** The maximum file size limit for skipping large files in the `_generate_async` function within the `generate` command was changed from 2MB to 1MB.
+
+2. **Impact of changes:** This change reduces the processing time for large codebases by skipping even more large files, potentially improving overall performance.  It also conserves API usage by avoiding large requests.
+
+3. **Critical notes:** None.
+---
+
+#### docgen/utils/ai_client.py
+2
+
+1. **Changed functionality:**
+    * The `_estimate_tokens` function now uses a more accurate token estimation method (4 characters per token) instead of word count.
+    * The retry mechanism in `_make_batch_request` has been simplified, removing unnecessary retries for faster failure handling.  The loop in `_make_request` was also reduced to a single attempt.
+    * The `_make_batch_request` function now explicitly handles cases where the server returns more or fewer results than requested, ensuring a consistent response size.  It adds padding or trims results as needed.
+    * Added a cache mechanism using MD5 hashing to store and retrieve generated documentation, significantly improving performance for repeated runs on unchanged code.  The cache expires after one day.  The cache key now includes the operation type ('generate' or 'update').
+    * The `generate_update_documentation_batch` function now includes changes in the cache key for updates, ensuring that updates are correctly cached and retrieved.
+    * Increased concurrency limits (semaphore, connector limits, pool sizes) for improved throughput.
+    * Reduced retry parameters and backoff factor in `_create_session` for faster retries.
+    * Added versioning to the cache file for future compatibility.
+    * Improved error handling in `_get_cached_doc` and `_save_to_cache` including cleanup of corrupted cache files and temporary files.
+    * Added usage tracking to monitor API calls.
+
+2. **Impact of changes:** These changes significantly improve the performance and efficiency of the AI client. Batching, caching, and optimized request handling reduce the number of requests to the AI server and improve overall response times, especially for larger codebases.  More robust error handling and cache management enhance reliability.
+
+3. **Critical notes:** The accuracy of token estimation still relies on a simplification (4 characters per token).  The cache mechanism assumes a specific structure for cached data.  Improperly formatted cache data will be deleted.  The usage tracking depends on the availability of the specified URL.
+---
+
+
+## Documentation Update (2025-02-01 05:48:03)
+
+### Changed Files:
+- docgen/auth/api_key_manager.py
+- docgen/auth/usage_tracker.py
+- docgen/cli.py
+- docgen/utils/ai_client.py
+- backend/src/models/usage.py
+- docgen/utils/machine_utils.py
+
+### Updates:
+
+#### docgen/auth/api_key_manager.py
+1
+
+1. **Changed functionality:** The `config.json` file is now used instead of `auth.json`. The `set_api_key` and `validate_api_key` methods have been simplified; they no longer store the plan or verification timestamp.  The `validate_api_key` function now includes the `machine_id` in the validation request.
+
+2. **Impact of changes:** The code is now cleaner and more focused on core API key management.  The removal of plan and timestamp storage simplifies the configuration file. The inclusion of `machine_id` in validation enhances security.
+
+3. **Critical notes:**  The hardcoded API URL (`http://0.0.0.0:8000/api/v1/auth/verify-key`) should be replaced with a configurable or environment variable for production use. Error handling in `_load_config` is rudimentary and could be improved for better robustness.
+---
+
+#### docgen/auth/usage_tracker.py
+2
+
+1. **Changed functionality:** The entire usage tracking mechanism has been changed from local file-based tracking with encryption to relying entirely on a remote server API (`http://0.0.0.0:8000/api/v1/usage`).  All local storage and encryption related code has been removed.
+
+2. **Impact of changes:**  The code is significantly simplified.  All usage tracking logic is now handled by the server, removing the need for local file management and encryption. This simplifies the client-side code and improves maintainability.  However, it introduces a dependency on the availability and correctness of the remote server.
+
+3. **Critical notes:** The reliance on a remote server for usage tracking is a significant change.  The server's availability and reliability directly impact the functionality of this code. Robust error handling and fallback mechanisms should be implemented to handle server unavailability.  The hardcoded API URL (`http://0.0.0.0:8000/api/v1/usage`) needs to be replaced with a configurable or environment variable for production use.
+---
+
+#### docgen/cli.py
+3
+
+1. **Changed functionality:** Added `import requests` to the top of the file to ensure that the `requests` library is available for use. Updated the `usage` command to fetch usage statistics directly from the server via HTTP requests, removing reliance on the local `UsageTracker`'s internal state.
+
+2. **Impact of changes:** The `usage` command now directly reflects the server's view of usage, eliminating potential inconsistencies between local and server-side usage data. This improves accuracy and reduces the risk of discrepancies.
+
+3. **Critical notes:** The functionality of the `usage` command is now entirely dependent on the availability and correctness of the server's API.  Error handling around network requests and API responses should be improved to provide more informative error messages to the user.  The server's API endpoint (`http://0.0.0.0:8000/api/v1/usage/check`) needs to be correctly configured and accessible.
+---
+
+#### docgen/utils/ai_client.py
+2
+
+1. **Changed functionality only:** Added `_track_usage` method for tracking API usage.  Various performance optimizations throughout the class, including increased connection pool sizes, reduced retry attempts, and adjusted rate limiting parameters.  Improved cache handling with versioning and more robust error handling during cache read/write operations.  Added cache clearing functionality (`_clear_cache`).
+
+2. **Impact of changes:** The performance optimizations aim to improve throughput and reduce latency. The `_track_usage` method adds API usage tracking capabilities. The cache improvements enhance reliability and data integrity. The addition of cache clearing provides a mechanism for cache management.
+
+3. **Critical notes:** The changes to rate limiting and retry strategies might need careful monitoring to ensure they don't introduce unintended consequences, such as exceeding API limits or masking actual errors.  The usage tracking endpoint ("http://0.0.0.0:8000/api/v1/usage/track") uses a localhost address which is not suitable for production.  The cache uses a simple file-based approach which may not scale well for very large caches.
+---
+
+#### backend/src/models/usage.py
+3
+
+1. **Changed functionality only:** No changes detected in the provided diff. The file content is identical in both the original and changed code snippets.
+
+2. **Impact of changes:** No impact, as there were no changes.
+
+3. **Critical notes:** The provided diff shows no changes.  It's possible the diff is incorrect or incomplete.
+---
+
+#### docgen/utils/machine_utils.py
+3
+
+1. **Changed functionality:** No functional changes were made to the code.  The provided "Changes" section shows identical code.
+
+2. **Impact of changes:** No impact.
+
+3. **Critical notes:** The `_get_cpu_info` function for non-Windows systems relies on parsing `/proc/cpuinfo`. This approach might be fragile and could break if the format of `/proc/cpuinfo` changes across different Linux distributions.  More robust parsing or alternative methods should be considered.  Error handling is minimal; more comprehensive error handling would improve robustness.
+---
+
+
 ## Documentation Update (2025-01-25 12:08:12)
 
 ### Changed Files:
