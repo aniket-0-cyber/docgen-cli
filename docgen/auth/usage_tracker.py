@@ -12,6 +12,7 @@ import requests
 from rich.console import Console
 from .api_key_manager import APIKeyManager
 from ..utils.machine_utils import get_machine_id
+from docgen.config.urls import URLConfig
 
 console = Console()
 
@@ -21,7 +22,7 @@ class UsageTracker:
         self.api_key_manager = APIKeyManager()
         
         # Base URL for API calls
-        self.base_url = "http://0.0.0.0:8000/api/v1/usage"  # Update with your actual API URL
+        self.base_url = URLConfig.USAGE_BASE_URL
 
 
     def can_make_request(self) -> Tuple[bool, str]:

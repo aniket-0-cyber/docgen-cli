@@ -5,6 +5,7 @@ import requests
 from typing import Optional, Tuple
 from datetime import datetime
 from ..utils.machine_utils import get_machine_id
+from docgen.config.urls import URLConfig
 
 class APIKeyManager:
     def __init__(self):
@@ -42,8 +43,8 @@ class APIKeyManager:
         """Validate API key with server and return (success, plan)."""
         try:
             response = requests.post(
-                'http://0.0.0.0:8000/api/v1/auth/verify-key',
-                json={'api_key': api_key, 'machine_id': self.machine_id},
+                f"{URLConfig.AUTH_BASE_URL}/verify-key",
+                json={'api_key': api_key},
                 timeout=10
             )
             if response.status_code == 200:

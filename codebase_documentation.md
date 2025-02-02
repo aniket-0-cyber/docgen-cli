@@ -1,6 +1,86 @@
 
 # Recent Updates
 
+## Documentation Update (2025-02-02 05:58:21)
+
+### Changed Files:
+- backend/src/models/usage.py
+- docgen/auth/api_key_manager.py
+- docgen/auth/usage_tracker.py
+- docgen/cli.py
+- docgen/utils/ai_client.py
+- docgen/config/urls.py
+
+### Updates:
+
+#### backend/src/models/usage.py
+1
+
+1. **Changed functionality only (bullet points):**
+    * Removed `request_type`, `timestamp`, and `count` fields from the `Usage` Pydantic model.
+    * Made `machine_id` a required field (removed `Optional`).
+    * Added `count`, `last_used`, and `created_at` fields to the `Usage` Pydantic model.  `count` defaults to 0, `last_used` and `created_at` are optional.
+
+2. **Impact of changes:** The `Usage` model now tracks different information.  The removal of fields suggests a change in how usage data is recorded and potentially a simplification of the data structure.  The addition of `count`, `last_used`, and `created_at` implies a focus on tracking usage frequency and timestamps.
+
+3. **Critical notes (if any):**  The change might break code relying on the previous structure of the `Usage` model.  Consider backward compatibility if necessary.  The addition of a `count` field may need additional logic to increment it correctly in the application.
+---
+
+#### docgen/auth/api_key_manager.py
+2
+
+1. **Changed functionality only (bullet points):**
+    * Changed the URL used for API key validation from a hardcoded URL (`'http://0.0.0.0:8000/api/v1/auth/verify-key'`) to a dynamically configured URL (`f"{URLConfig.AUTH_BASE_URL}/verify-key"`) using `URLConfig`.
+    * Removed the `machine_id` from the JSON payload sent during API key validation.
+
+2. **Impact of changes:** The API key validation is now more flexible and configurable. The URL for the authentication service can be changed by modifying the `URLConfig` object, improving maintainability and deployment flexibility.  Removing `machine_id` from the validation request simplifies the API interaction.
+
+3. **Critical notes (if any):** Ensure that `URLConfig.AUTH_BASE_URL` is correctly configured.  The removal of `machine_id` from the validation request might affect the server-side logic if it relied on that parameter for identification.  Verify server-side changes to match the new client-side implementation.
+---
+
+#### docgen/auth/usage_tracker.py
+3
+
+1. **Changed functionality only (bullet points):**
+    * Changed the base URL for API calls from a hardcoded URL (`"http://0.0.0.0:8000/api/v1/usage"`) to a dynamically configured URL (`URLConfig.USAGE_BASE_URL`) using `URLConfig`.
+
+2. **Impact of changes:** The usage tracking is now more flexible and configurable.  The URL for the usage tracking service can be changed by modifying the `URLConfig` object, improving maintainability and deployment flexibility.
+
+3. **Critical notes (if any):** Ensure that `URLConfig.USAGE_BASE_URL` is correctly configured.  The change might require updating any deployment or configuration scripts that previously relied on the hardcoded URL.  Verify that the API endpoints at the new URL are correctly implemented and accessible.
+---
+
+#### docgen/cli.py
+1
+
+1. **Changed functionality:** The `_show_api_key_instructions()` function now uses `URLConfig.AUTH_BASE_URL` to dynamically generate the API key retrieval URL instead of a hardcoded URL.  The URLs used in the `generate` and `update` commands for usage limit exceeded messages are now also dynamically generated from `URLConfig`.  The `auth logout` command now sends a logout request to the server using `URLConfig.AUTH_BASE_URL`. The `usage` command now uses `URLConfig.USAGE_BASE_URL` to fetch usage statistics.
+
+2. **Impact of changes:** This improves maintainability and flexibility.  The code is no longer tied to specific URLs, making it easier to update or deploy to different environments.
+
+3. **Critical notes:** None.
+---
+
+#### docgen/utils/ai_client.py
+2
+
+1. **Changed functionality:** The `AIClient` class now uses `URLConfig.SERVER_URLS` to get the AI server URLs instead of hardcoded values. The `_make_request` function's retry logic has been adjusted (reduced retries and timeout), and the rate limiting parameters have been modified (`RATE_LIMIT_REQUESTS`, `RATE_LIMIT_WINDOW`) for improved throughput. The maximum batch size (`MAX_BATCH_SIZE`) and token limit (`MAX_BATCH_TOKENS`) for batch requests have been increased.  The `AIClient` now includes caching functionality using `_get_cached_doc` and `_save_to_cache` methods, utilizing MD5 hashing for cache keys.  The `_track_usage` method is added to track API usage.
+
+
+2. **Impact of changes:** These changes improve the robustness, efficiency, and performance of the AI client.  Increased batch sizes reduce the number of API calls, leading to faster processing. The caching mechanism significantly reduces redundant API requests.  The use of `URLConfig` makes the code more adaptable to different server configurations.  The rate limit adjustments improve throughput while adhering to API constraints.
+
+3. **Critical notes:**  The cache relies on the stability of the MD5 hash for key generation.  Any changes to the code structure used to generate the cache key will invalidate existing cached entries.  Error handling around cache operations should be robust to prevent data corruption.
+---
+
+#### docgen/config/urls.py
+3
+
+1. **Changed functionality:** No functional changes were made to this file in the provided diffs. The file remains unchanged.
+
+2. **Impact of changes:** No impact.
+
+3. **Critical notes:**  The `SERVER_URLS` list hardcodes server addresses.  Consider using environment variables or a configuration file to make this more flexible.  The dependency on the first element of `SERVER_URLS` in `USAGE_BASE_URL` and the third element in `AUTH_BASE_URL` introduces a potential point of failure if the order of servers changes.  Using a more robust method to specify these base URLs would be beneficial.
+---
+
+
 ## Documentation Update (2025-02-02 04:01:15)
 
 ### Changed Files:

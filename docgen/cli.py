@@ -19,6 +19,7 @@ from docgen.utils.extension import SUPPORTED_EXTENSIONS
 from docgen.auth.api_key_manager import APIKeyManager
 from docgen.auth.usage_tracker import UsageTracker
 import requests
+from docgen.config.urls import URLConfig
 # from docgen.utils.ai_client import AIClient
 
 app = typer.Typer(
@@ -67,11 +68,10 @@ console = Console()
 class APIKeyRequired(Exception):
     """Raised when API key is missing or invalid."""
     pass
-
 def _show_api_key_instructions():
     """Helper function to show API key instructions."""
     console.print("\nTo increase your limit, please:")
-    console.print("1. Get an API key at: https://your-website.com/get-api-key")
+    console.print(f"1. Get an API key at: {URLConfig.AUTH_BASE_URL}/get-api-key")
     console.print("2. Run: docgen auth login --key YOUR_API_KEY")
 
 async def process_file(path: Path, output_format: str, output_dir: Optional[Path] = None) -> None:
@@ -661,9 +661,9 @@ def auth(
             
     elif command.lower() == "logout":
         try:
-            # Send logout request to server
+            # Send logout request to server using URLConfig
             response = requests.post(
-                "http://0.0.0.0:8000/api/v1/auth/logout-key",
+                f"{URLConfig.AUTH_BASE_URL}/logout-key",
                 headers={
                     'x-machine-id': tracker.machine_id,
                     'x-api-key': api_key_manager.get_api_key()
@@ -693,12 +693,13 @@ def usage():
     
     try:
         response = requests.get(
-            "http://0.0.0.0:8000/api/v1/usage/check",
+            f"{URLConfig.USAGE_BASE_URL}/check",
             headers={
                 'x-machine-id': tracker.machine_id,
                 'x-api-key': tracker.api_key_manager.get_api_key()
             }
         )
+        print(response.json())
         
         if response.status_code == 200:
             data = response.json()
