@@ -1,6 +1,24 @@
 
 # Recent Updates
 
+## Documentation Update (2025-02-02 12:22:02)
+
+### Changed Files:
+- docgen/cli.py
+
+### Updates:
+
+#### docgen/cli.py
+1
+
+* **Added status indicators:**  `console.status` is now used to display progress during file analysis and documentation generation, improving user experience.
+* **Improved error handling:** More robust error handling within the `_generate_async` function prevents crashes due to issues with individual files.  Large files (>1MB) are now skipped gracefully.
+* **Refactored code structure:** The code within `_generate_async` is restructured to improve readability and maintainability.  Error handling is now more centralized.
+* **No significant impact on core functionality:** The changes primarily enhance the user experience and the robustness of the `generate` command.
+* **Critical notes:** None.
+---
+
+
 ## Documentation Update (2025-02-02 05:58:21)
 
 ### Changed Files:

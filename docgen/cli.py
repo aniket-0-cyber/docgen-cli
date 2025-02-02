@@ -207,6 +207,9 @@ async def _generate_async(
             console.print("2. Run: docgen auth login --key=YOUR_API_KEY")
             return
         
+        # Create a new status for file analysis
+        analysis_status = console.status("[bold green]Analyzing files...", spinner="dots")
+        analysis_status.start()
         
         start_time = time.time()
         base_path = Path.cwd()
@@ -240,13 +243,13 @@ async def _generate_async(
         # Prepare batch processing data
         files_data = []
         total_size = 0
-        with console.status("[bold green]Analyzing files...") as status:
+        
+        try:
             for file_path in source_files:
                 try:
                     # Skip large files
                     file_size = file_path.stat().st_size
                     if file_size > 1_000_000:  # Skip files larger than 1MB
-                        console.print(f"[yellow]Skipping large file: {file_path}[/yellow]")
                         continue
                     
                     total_size += file_size
@@ -255,12 +258,19 @@ async def _generate_async(
                     analysis_result = analyzer.analyze_file()
                     files_data.append((file_path, analysis_result, source_code))
                 except Exception as e:
-                    console.print(f"[yellow]Warning: Error analyzing {file_path}: {str(e)}[/yellow]")
+                    continue
+        finally:
+            analysis_status.stop()
 
         # Generate documentation asynchronously
-        ai_generator = AIDocGenerator()
-        with console.status("[bold green]Generating documentation...") as status:
+        generation_status = console.status("[bold green]Generating documentation...", spinner="dots")
+        generation_status.start()
+        
+        try:
+            ai_generator = AIDocGenerator()
             docs_results = await ai_generator.generate_documentation_batch(files_data)
+        finally:
+            generation_status.stop()
 
         # Combine documentation
         output_filename = "codebase_documentation.md" if not current_dir else "directory_documentation.md"
