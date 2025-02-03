@@ -1,6 +1,53 @@
 
 # Recent Updates
 
+## Documentation Update (2025-02-03 03:27:02)
+
+### Changed Files:
+- docgen/config/urls.py
+- setup.py
+
+### Updates:
+
+#### docgen/config/urls.py
+1
+
+1. **Changed functionality:**
+    * Reduced the number of base URLs for AI servers from multiple to two (`https://api1.docgen.dev`, `https://api2.docgen.dev`).
+    * Modified the `AUTH_BASE_URL` to use the second server URL in `SERVER_URLS`.
+
+2. **Impact of changes:**
+    * Simplifies the configuration by reducing the number of server endpoints.
+    * Potentially improves reliability by consolidating authentication to a single server.
+    * Requires updating any code that relied on the previous multiple server URLs and their specific assignments to `AUTH_BASE_URL`.
+
+3. **Critical notes:**  The change in server URLs may require updating deployed instances and client applications that interact with these endpoints.  Ensure proper testing after deployment.
+---
+
+#### setup.py
+2
+
+1. **Changed functionality:**
+    * Updated author name and email.
+    * Changed description to "AI-Powered Documentation Generator for Developers".
+    * Added project URLs for Bug Tracker and Documentation.
+    * Updated `Development Status` to "4 - Beta".
+    * Added versioning from `version.txt`.
+    * Added `include_package_data=True` to include package data.
+    * Added keywords for better searchability.
+    * Added several dependencies: `esprima`, `javalang`, `google-generativeai`, `aiohttp`, `python-dotenv`, `requests`, `tqdm`, `pydantic`.
+
+
+2. **Impact of changes:**
+    * Improved project metadata for better discoverability and maintainability.
+    * Added functionality by including new dependencies, implying new features related to AI, asynchronous operations, environment variables, and data validation.
+    * The versioning mechanism allows for easier management of different releases.
+
+
+3. **Critical notes:**  The addition of new dependencies requires careful consideration of their licensing and potential conflicts with existing code. Thorough testing is crucial after these changes to ensure compatibility and functionality.  The placeholder URLs in `setup.py` should be replaced with actual repository URLs.
+---
+
+
 ## Documentation Update (2025-02-02 12:22:02)
 
 ### Changed Files:
