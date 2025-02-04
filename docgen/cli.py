@@ -5,13 +5,12 @@ warnings.filterwarnings('ignore', category=Warning)
 import typer
 from rich.console import Console
 from pathlib import Path
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List
 import glob
 from docgen.config.config_handler import ConfigHandler
 from docgen.analyzers.code_analyzer import CodeAnalyzer
 from docgen.generators.ai_doc_generator import AIDocGenerator
-from datetime import datetime, timedelta
-from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 import time
 import asyncio
 from docgen.utils.git_utils import GitAnalyzer
@@ -709,7 +708,6 @@ def usage():
                 'x-api-key': tracker.api_key_manager.get_api_key()
             }
         )
-        print(response.json())
         
         if response.status_code == 200:
             data = response.json()

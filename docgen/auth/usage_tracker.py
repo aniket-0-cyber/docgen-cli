@@ -1,18 +1,10 @@
-import hashlib
-import platform
-import uuid
-import json
-from pathlib import Path
-from datetime import datetime, timedelta
-from typing import Dict, Tuple, Optional
-from cryptography.fernet import Fernet
-import base64
-import os
 import requests
+from typing import Dict, Tuple, Optional
 from rich.console import Console
 from .api_key_manager import APIKeyManager
 from ..utils.machine_utils import get_machine_id
 from docgen.config.urls import URLConfig
+from typing import Tuple
 
 console = Console()
 

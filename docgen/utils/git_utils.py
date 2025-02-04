@@ -3,7 +3,7 @@ from docgen.utils.extension import SUPPORTED_EXTENSIONS
 from rich.console import Console
 from git import Repo
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict
 import json
 from datetime import datetime
 

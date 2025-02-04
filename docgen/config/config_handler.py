@@ -1,8 +1,7 @@
 # docgen/config/config_handler.py
 from pathlib import Path
 import json
-from typing import Dict, Any
-import typer
+from typing import Any
 
 DEFAULT_CONFIG = {
     "template_style": "google",
