@@ -13,7 +13,8 @@ tqdm>=4.67.1
 pydantic>=2.10.4
 ratelimit>=2.2.1
 cryptography>=44.0.0
-
+cython>=3.0.0
+pywin32
 # Development dependencies
 pytest>=8.3.4
 black>=24.10.0

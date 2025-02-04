@@ -1,5 +1,6 @@
 # setup.py
-from setuptools import setup, find_packages
+from setuptools import setup, find_packages, Extension
+from Cython.Build import cythonize
 import os
 from datetime import datetime
 
@@ -45,7 +46,15 @@ setup(
         "Topic :: Software Development :: Documentation",
         "Topic :: Software Development :: Libraries :: Python Modules",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.7",
+    setup_requires=[
+        "setuptools>=42",
+        "wheel",
+        "cython>=3.0.0",
+    ],
+    build_requires=[
+        "cython>=3.0.0",
+    ],
     install_requires=[
         "aiohttp>=3.8.0",
         "google-generativeai>=0.8.0",
@@ -59,9 +68,12 @@ setup(
         "python-dotenv>=1.0.0",
         "requests>=2.28.0",
         "tqdm>=4.65.0",
+        "cython>=3.0.0",
         "pydantic>=2.0.0",
         "ratelimit>=2.2.0",
         "cryptography>=38.0.0",
+        "pywin32; platform_system=='Windows'",
+        "python-dotenv>=1.0.1"
     ],
     extras_require={
         'dev': [
@@ -80,5 +92,6 @@ setup(
     },
     include_package_data=True,
     keywords="documentation generator ai development tools docstring markdown",
+    ext_modules=cythonize(["docgen/utils/_machine_utils.pyx"], language_level=3),
 )
 
