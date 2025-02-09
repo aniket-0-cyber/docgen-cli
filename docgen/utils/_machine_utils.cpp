@@ -1813,15 +1813,6 @@ static CYTHON_INLINE PyObject* __Pyx_PyObject_CallMethO(PyObject *func, PyObject
 #define __Pyx_PyObject_FastCall(func, args, nargs)  __Pyx_PyObject_FastCallDict(func, args, (size_t)(nargs), NULL)
 static CYTHON_INLINE PyObject* __Pyx_PyObject_FastCallDict(PyObject *func, PyObject **args, size_t nargs, PyObject *kwargs);
 
-/* PyObject_Unicode.proto */
-#if PY_MAJOR_VERSION >= 3
-#define __Pyx_PyObject_Unicode(obj)\
-    (likely(PyUnicode_CheckExact(obj)) ? __Pyx_NewRef(obj) : PyObject_Str(obj))
-#else
-#define __Pyx_PyObject_Unicode(obj)\
-    (likely(PyUnicode_CheckExact(obj)) ? __Pyx_NewRef(obj) : PyObject_Unicode(obj))
-#endif
-
 /* RaiseUnexpectedTypeError.proto */
 static int __Pyx_RaiseUnexpectedTypeError(const char *expected, PyObject *obj);
 
@@ -1849,6 +1840,49 @@ static int __Pyx__GetException(PyThreadState *tstate, PyObject **type, PyObject 
 static int __Pyx_GetException(PyObject **type, PyObject **value, PyObject **tb);
 #endif
 
+/* PyObject_Unicode.proto */
+#if PY_MAJOR_VERSION >= 3
+#define __Pyx_PyObject_Unicode(obj)\
+    (likely(PyUnicode_CheckExact(obj)) ? __Pyx_NewRef(obj) : PyObject_Str(obj))
+#else
+#define __Pyx_PyObject_Unicode(obj)\
+    (likely(PyUnicode_CheckExact(obj)) ? __Pyx_NewRef(obj) : PyObject_Unicode(obj))
+#endif
+
+/* ListAppend.proto */
+#if CYTHON_USE_PYLIST_INTERNALS && CYTHON_ASSUME_SAFE_MACROS
+static CYTHON_INLINE int __Pyx_PyList_Append(PyObject* list, PyObject* x) {
+    PyListObject* L = (PyListObject*) list;
+    Py_ssize_t len = Py_SIZE(list);
+    if (likely(L->allocated > len) & likely(len > (L->allocated >> 1))) {
+        Py_INCREF(x);
+        #if CYTHON_COMPILING_IN_CPYTHON && PY_VERSION_HEX >= 0x030d0000
+        L->ob_item[len] = x;
+        #else
+        PyList_SET_ITEM(list, len, x);
+        #endif
+        __Pyx_SET_SIZE(list, len + 1);
+        return 0;
+    }
+    return PyList_Append(list, x);
+}
+#else
+#define __Pyx_PyList_Append(L,x) PyList_Append(L,x)
+#endif
+
+/* ListExtend.proto */
+static CYTHON_INLINE int __Pyx_PyList_Extend(PyObject* L, PyObject* v) {
+#if CYTHON_COMPILING_IN_CPYTHON && PY_VERSION_HEX < 0x030d0000
+    PyObject* none = _PyList_Extend((PyListObject*)L, v);
+    if (unlikely(!none))
+        return -1;
+    Py_DECREF(none);
+    return 0;
+#else
+    return PyList_SetSlice(L, PY_SSIZE_T_MAX, PY_SSIZE_T_MAX, v);
+#endif
+}
+
 /* Import.proto */
 static PyObject *__Pyx_Import(PyObject *name, PyObject *from_list, int level);
 
@@ -1857,12 +1891,6 @@ static PyObject *__Pyx_ImportDottedModule(PyObject *name, PyObject *parts_tuple)
 #if PY_MAJOR_VERSION >= 3
 static PyObject *__Pyx_ImportDottedModule_WalkParts(PyObject *module, PyObject *name, PyObject *parts_tuple);
 #endif
-
-/* SliceObject.proto */
-static CYTHON_INLINE PyObject* __Pyx_PyObject_GetSlice(
-        PyObject* obj, Py_ssize_t cstart, Py_ssize_t cstop,
-        PyObject** py_start, PyObject** py_stop, PyObject** py_slice,
-        int has_cstart, int has_cstop, int wraparound);
 
 /* GetItemInt.proto */
 #define __Pyx_GetItemInt(o, i, type, is_signed, to_py_func, is_list, wraparound, boundscheck)\
@@ -1885,6 +1913,12 @@ static CYTHON_INLINE PyObject *__Pyx_GetItemInt_Tuple_Fast(PyObject *o, Py_ssize
 static PyObject *__Pyx_GetItemInt_Generic(PyObject *o, PyObject* j);
 static CYTHON_INLINE PyObject *__Pyx_GetItemInt_Fast(PyObject *o, Py_ssize_t i,
                                                      int is_list, int wraparound, int boundscheck);
+
+/* PySequenceContains.proto */
+static CYTHON_INLINE int __Pyx_PySequence_ContainsTF(PyObject* item, PyObject* seq, int eq) {
+    int result = PySequence_Contains(seq, item);
+    return unlikely(result < 0) ? result : (result == (eq == Py_EQ));
+}
 
 /* PyObjectLookupSpecial.proto */
 #if CYTHON_USE_PYTYPE_LOOKUP && CYTHON_USE_TYPE_SLOTS
@@ -2128,8 +2162,12 @@ static int __Pyx_InitStrings(__Pyx_StringTabEntry *t);
 /* Module declarations from "cython" */
 
 /* Module declarations from "docgen.utils._machine_utils" */
-static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_disk_id(void); /*proto*/
-static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_cpu_info(void); /*proto*/
+static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_stable_system_info(void); /*proto*/
+static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_windows_info(void); /*proto*/
+static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_macos_info(void); /*proto*/
+static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_linux_info(void); /*proto*/
+static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_cached_machine_id(void); /*proto*/
+static void __pyx_f_6docgen_5utils_14_machine_utils__save_machine_id(PyObject *); /*proto*/
 /* #### Code section: typeinfo ### */
 /* #### Code section: before_global_var ### */
 #define __Pyx_MODULE_NAME "docgen.utils._machine_utils"
@@ -2141,50 +2179,76 @@ int __pyx_module_is_main_docgen__utils___machine_utils = 0;
 static PyObject *__pyx_builtin_open;
 /* #### Code section: string_decls ### */
 static const char __pyx_k_[] = "";
+static const char __pyx_k_C[] = "C:\\";
 static const char __pyx_k_r[] = "r";
+static const char __pyx_k_w[] = "w";
 static const char __pyx_k__2[] = "*";
-static const char __pyx_k__3[] = "\000";
-static const char __pyx_k__8[] = ":";
-static const char __pyx_k__11[] = "?";
+static const char __pyx_k__3[] = "\n";
+static const char __pyx_k__4[] = ":";
+static const char __pyx_k_os[] = "os";
+static const char __pyx_k_WMI[] = "WMI";
+static const char __pyx_k__10[] = "?";
+static const char __pyx_k_run[] = "run";
 static const char __pyx_k_str[] = "str";
+static const char __pyx_k_wmi[] = "wmi";
 static const char __pyx_k_exit[] = "__exit__";
+static const char __pyx_k_join[] = "join";
 static const char __pyx_k_main[] = "__main__";
 static const char __pyx_k_name[] = "__name__";
-static const char __pyx_k_node[] = "node";
 static const char __pyx_k_open[] = "open";
+static const char __pyx_k_path[] = "path";
 static const char __pyx_k_read[] = "read";
 static const char __pyx_k_spec[] = "__spec__";
 static const char __pyx_k_test[] = "__test__";
+static const char __pyx_k_text[] = "text";
 static const char __pyx_k_uuid[] = "uuid";
 static const char __pyx_k_enter[] = "__enter__";
 static const char __pyx_k_split[] = "split";
 static const char __pyx_k_strip[] = "strip";
+static const char __pyx_k_write[] = "write";
+static const char __pyx_k_Darwin[] = "Darwin";
+static const char __pyx_k_exists[] = "exists";
 static const char __pyx_k_import[] = "__import__";
 static const char __pyx_k_return[] = "return";
 static const char __pyx_k_sha256[] = "sha256";
+static const char __pyx_k_stdout[] = "stdout";
 static const char __pyx_k_system[] = "system";
 static const char __pyx_k_Windows[] = "Windows";
 static const char __pyx_k_getnode[] = "getnode";
 static const char __pyx_k_hashlib[] = "hashlib";
-static const char __pyx_k_machine[] = "machine";
-static const char __pyx_k_version[] = "version";
+static const char __pyx_k_exist_ok[] = "exist_ok";
+static const char __pyx_k_makedirs[] = "makedirs";
 static const char __pyx_k_platform[] = "platform";
 static const char __pyx_k_win32api[] = "win32api";
+static const char __pyx_k_cached_id[] = "cached_id";
 static const char __pyx_k_hexdigest[] = "hexdigest";
-static const char __pyx_k_processor[] = "processor";
-static const char __pyx_k_machine_id[] = "machine_id";
-static const char __pyx_k_model_name[] = "model name";
-static const char __pyx_k_startswith[] = "startswith";
+static const char __pyx_k_0000000000[] = "0000000000";
+static const char __pyx_k_Win32_BIOS[] = "Win32_BIOS";
+static const char __pyx_k_expanduser[] = "expanduser";
+static const char __pyx_k_machine_id[] = ".machine_id";
+static const char __pyx_k_subprocess[] = "subprocess";
+static const char __pyx_k_fallback_id[] = "fallback_id";
 static const char __pyx_k_system_info[] = "system_info";
+static const char __pyx_k_SerialNumber[] = "SerialNumber";
+static const char __pyx_k_docgen_cache[] = "~/.docgen/cache";
 static const char __pyx_k_initializing[] = "_initializing";
 static const char __pyx_k_is_coroutine[] = "_is_coroutine";
-static const char __pyx_k_proc_cpuinfo[] = "/proc/cpuinfo";
+static const char __pyx_k_machine_id_2[] = "machine_id";
+static const char __pyx_k_Hardware_UUID[] = "Hardware UUID";
+static const char __pyx_k_Serial_Number[] = "Serial Number";
+static const char __pyx_k_win32security[] = "win32security";
+static const char __pyx_k_capture_output[] = "capture_output";
 static const char __pyx_k_etc_machine_id[] = "/etc/machine-id";
 static const char __pyx_k_get_machine_id[] = "get_machine_id";
+static const char __pyx_k_system_profiler[] = "system_profiler";
+static const char __pyx_k_SPHardwareDataType[] = "SPHardwareDataType";
 static const char __pyx_k_asyncio_coroutines[] = "asyncio.coroutines";
 static const char __pyx_k_cline_in_traceback[] = "cline_in_traceback";
-static const char __pyx_k_GetLogicalDriveStrings[] = "GetLogicalDriveStrings";
+static const char __pyx_k_GetVolumeInformation[] = "GetVolumeInformation";
+static const char __pyx_k_var_lib_dbus_machine_id[] = "/var/lib/dbus/machine-id";
 static const char __pyx_k_docgen_utils__machine_utils[] = "docgen.utils._machine_utils";
+static const char __pyx_k_sys_class_dmi_id_board_serial[] = "/sys/class/dmi/id/board_serial";
+static const char __pyx_k_sys_class_dmi_id_product_uuid[] = "/sys/class/dmi/id/product_uuid";
 static const char __pyx_k_docgen_utils__machine_utils_pyx[] = "docgen/utils/_machine_utils.pyx";
 /* #### Code section: decls ### */
 static PyObject *__pyx_pf_6docgen_5utils_14_machine_utils_get_machine_id(CYTHON_UNUSED PyObject *__pyx_self); /* proto */
@@ -2220,19 +2284,35 @@ typedef struct {
   #if CYTHON_USE_MODULE_STATE
   #endif
   PyObject *__pyx_kp_u_;
-  PyObject *__pyx_n_s_GetLogicalDriveStrings;
+  PyObject *__pyx_kp_u_0000000000;
+  PyObject *__pyx_kp_u_C;
+  PyObject *__pyx_n_u_Darwin;
+  PyObject *__pyx_n_s_GetVolumeInformation;
+  PyObject *__pyx_kp_u_Hardware_UUID;
+  PyObject *__pyx_n_u_SPHardwareDataType;
+  PyObject *__pyx_n_s_SerialNumber;
+  PyObject *__pyx_kp_u_Serial_Number;
+  PyObject *__pyx_n_s_WMI;
+  PyObject *__pyx_n_s_Win32_BIOS;
   PyObject *__pyx_n_u_Windows;
-  PyObject *__pyx_n_s__11;
+  PyObject *__pyx_n_s__10;
   PyObject *__pyx_n_s__2;
   PyObject *__pyx_kp_u__3;
-  PyObject *__pyx_kp_u__8;
+  PyObject *__pyx_kp_u__4;
   PyObject *__pyx_n_s_asyncio_coroutines;
+  PyObject *__pyx_n_s_cached_id;
+  PyObject *__pyx_n_s_capture_output;
   PyObject *__pyx_n_s_cline_in_traceback;
+  PyObject *__pyx_kp_u_docgen_cache;
   PyObject *__pyx_n_s_docgen_utils__machine_utils;
   PyObject *__pyx_kp_s_docgen_utils__machine_utils_pyx;
   PyObject *__pyx_n_s_enter;
   PyObject *__pyx_kp_u_etc_machine_id;
+  PyObject *__pyx_n_s_exist_ok;
+  PyObject *__pyx_n_s_exists;
   PyObject *__pyx_n_s_exit;
+  PyObject *__pyx_n_s_expanduser;
+  PyObject *__pyx_n_s_fallback_id;
   PyObject *__pyx_n_s_get_machine_id;
   PyObject *__pyx_n_s_getnode;
   PyObject *__pyx_n_s_hashlib;
@@ -2240,38 +2320,46 @@ typedef struct {
   PyObject *__pyx_n_s_import;
   PyObject *__pyx_n_s_initializing;
   PyObject *__pyx_n_s_is_coroutine;
-  PyObject *__pyx_n_s_machine;
-  PyObject *__pyx_n_s_machine_id;
+  PyObject *__pyx_n_s_join;
+  PyObject *__pyx_kp_u_machine_id;
+  PyObject *__pyx_n_s_machine_id_2;
   PyObject *__pyx_n_s_main;
-  PyObject *__pyx_kp_u_model_name;
+  PyObject *__pyx_n_s_makedirs;
   PyObject *__pyx_n_s_name;
-  PyObject *__pyx_n_s_node;
   PyObject *__pyx_n_s_open;
+  PyObject *__pyx_n_s_os;
+  PyObject *__pyx_n_s_path;
   PyObject *__pyx_n_s_platform;
-  PyObject *__pyx_kp_u_proc_cpuinfo;
-  PyObject *__pyx_n_s_processor;
   PyObject *__pyx_n_u_r;
   PyObject *__pyx_n_s_read;
   PyObject *__pyx_n_s_return;
+  PyObject *__pyx_n_s_run;
   PyObject *__pyx_n_s_sha256;
   PyObject *__pyx_n_s_spec;
   PyObject *__pyx_n_s_split;
-  PyObject *__pyx_n_s_startswith;
+  PyObject *__pyx_n_s_stdout;
   PyObject *__pyx_n_s_str;
   PyObject *__pyx_n_s_strip;
+  PyObject *__pyx_n_s_subprocess;
+  PyObject *__pyx_kp_u_sys_class_dmi_id_board_serial;
+  PyObject *__pyx_kp_u_sys_class_dmi_id_product_uuid;
   PyObject *__pyx_n_s_system;
   PyObject *__pyx_n_s_system_info;
+  PyObject *__pyx_n_u_system_profiler;
   PyObject *__pyx_n_s_test;
+  PyObject *__pyx_n_s_text;
   PyObject *__pyx_n_s_uuid;
-  PyObject *__pyx_n_s_version;
+  PyObject *__pyx_kp_u_var_lib_dbus_machine_id;
+  PyObject *__pyx_n_u_w;
   PyObject *__pyx_n_s_win32api;
-  PyObject *__pyx_int_neg_1;
-  PyObject *__pyx_slice__4;
+  PyObject *__pyx_n_s_win32security;
+  PyObject *__pyx_n_s_wmi;
+  PyObject *__pyx_n_s_write;
   PyObject *__pyx_tuple__5;
   PyObject *__pyx_tuple__6;
   PyObject *__pyx_tuple__7;
-  PyObject *__pyx_tuple__9;
-  PyObject *__pyx_codeobj__10;
+  PyObject *__pyx_tuple__8;
+  PyObject *__pyx_codeobj__9;
 } __pyx_mstate;
 
 #if CYTHON_USE_MODULE_STATE
@@ -2315,19 +2403,35 @@ static int __pyx_m_clear(PyObject *m) {
   Py_CLEAR(clear_module_state->__pyx_FusedFunctionType);
   #endif
   Py_CLEAR(clear_module_state->__pyx_kp_u_);
-  Py_CLEAR(clear_module_state->__pyx_n_s_GetLogicalDriveStrings);
+  Py_CLEAR(clear_module_state->__pyx_kp_u_0000000000);
+  Py_CLEAR(clear_module_state->__pyx_kp_u_C);
+  Py_CLEAR(clear_module_state->__pyx_n_u_Darwin);
+  Py_CLEAR(clear_module_state->__pyx_n_s_GetVolumeInformation);
+  Py_CLEAR(clear_module_state->__pyx_kp_u_Hardware_UUID);
+  Py_CLEAR(clear_module_state->__pyx_n_u_SPHardwareDataType);
+  Py_CLEAR(clear_module_state->__pyx_n_s_SerialNumber);
+  Py_CLEAR(clear_module_state->__pyx_kp_u_Serial_Number);
+  Py_CLEAR(clear_module_state->__pyx_n_s_WMI);
+  Py_CLEAR(clear_module_state->__pyx_n_s_Win32_BIOS);
   Py_CLEAR(clear_module_state->__pyx_n_u_Windows);
-  Py_CLEAR(clear_module_state->__pyx_n_s__11);
+  Py_CLEAR(clear_module_state->__pyx_n_s__10);
   Py_CLEAR(clear_module_state->__pyx_n_s__2);
   Py_CLEAR(clear_module_state->__pyx_kp_u__3);
-  Py_CLEAR(clear_module_state->__pyx_kp_u__8);
+  Py_CLEAR(clear_module_state->__pyx_kp_u__4);
   Py_CLEAR(clear_module_state->__pyx_n_s_asyncio_coroutines);
+  Py_CLEAR(clear_module_state->__pyx_n_s_cached_id);
+  Py_CLEAR(clear_module_state->__pyx_n_s_capture_output);
   Py_CLEAR(clear_module_state->__pyx_n_s_cline_in_traceback);
+  Py_CLEAR(clear_module_state->__pyx_kp_u_docgen_cache);
   Py_CLEAR(clear_module_state->__pyx_n_s_docgen_utils__machine_utils);
   Py_CLEAR(clear_module_state->__pyx_kp_s_docgen_utils__machine_utils_pyx);
   Py_CLEAR(clear_module_state->__pyx_n_s_enter);
   Py_CLEAR(clear_module_state->__pyx_kp_u_etc_machine_id);
+  Py_CLEAR(clear_module_state->__pyx_n_s_exist_ok);
+  Py_CLEAR(clear_module_state->__pyx_n_s_exists);
   Py_CLEAR(clear_module_state->__pyx_n_s_exit);
+  Py_CLEAR(clear_module_state->__pyx_n_s_expanduser);
+  Py_CLEAR(clear_module_state->__pyx_n_s_fallback_id);
   Py_CLEAR(clear_module_state->__pyx_n_s_get_machine_id);
   Py_CLEAR(clear_module_state->__pyx_n_s_getnode);
   Py_CLEAR(clear_module_state->__pyx_n_s_hashlib);
@@ -2335,38 +2439,46 @@ static int __pyx_m_clear(PyObject *m) {
   Py_CLEAR(clear_module_state->__pyx_n_s_import);
   Py_CLEAR(clear_module_state->__pyx_n_s_initializing);
   Py_CLEAR(clear_module_state->__pyx_n_s_is_coroutine);
-  Py_CLEAR(clear_module_state->__pyx_n_s_machine);
-  Py_CLEAR(clear_module_state->__pyx_n_s_machine_id);
+  Py_CLEAR(clear_module_state->__pyx_n_s_join);
+  Py_CLEAR(clear_module_state->__pyx_kp_u_machine_id);
+  Py_CLEAR(clear_module_state->__pyx_n_s_machine_id_2);
   Py_CLEAR(clear_module_state->__pyx_n_s_main);
-  Py_CLEAR(clear_module_state->__pyx_kp_u_model_name);
+  Py_CLEAR(clear_module_state->__pyx_n_s_makedirs);
   Py_CLEAR(clear_module_state->__pyx_n_s_name);
-  Py_CLEAR(clear_module_state->__pyx_n_s_node);
   Py_CLEAR(clear_module_state->__pyx_n_s_open);
+  Py_CLEAR(clear_module_state->__pyx_n_s_os);
+  Py_CLEAR(clear_module_state->__pyx_n_s_path);
   Py_CLEAR(clear_module_state->__pyx_n_s_platform);
-  Py_CLEAR(clear_module_state->__pyx_kp_u_proc_cpuinfo);
-  Py_CLEAR(clear_module_state->__pyx_n_s_processor);
   Py_CLEAR(clear_module_state->__pyx_n_u_r);
   Py_CLEAR(clear_module_state->__pyx_n_s_read);
   Py_CLEAR(clear_module_state->__pyx_n_s_return);
+  Py_CLEAR(clear_module_state->__pyx_n_s_run);
   Py_CLEAR(clear_module_state->__pyx_n_s_sha256);
   Py_CLEAR(clear_module_state->__pyx_n_s_spec);
   Py_CLEAR(clear_module_state->__pyx_n_s_split);
-  Py_CLEAR(clear_module_state->__pyx_n_s_startswith);
+  Py_CLEAR(clear_module_state->__pyx_n_s_stdout);
   Py_CLEAR(clear_module_state->__pyx_n_s_str);
   Py_CLEAR(clear_module_state->__pyx_n_s_strip);
+  Py_CLEAR(clear_module_state->__pyx_n_s_subprocess);
+  Py_CLEAR(clear_module_state->__pyx_kp_u_sys_class_dmi_id_board_serial);
+  Py_CLEAR(clear_module_state->__pyx_kp_u_sys_class_dmi_id_product_uuid);
   Py_CLEAR(clear_module_state->__pyx_n_s_system);
   Py_CLEAR(clear_module_state->__pyx_n_s_system_info);
+  Py_CLEAR(clear_module_state->__pyx_n_u_system_profiler);
   Py_CLEAR(clear_module_state->__pyx_n_s_test);
+  Py_CLEAR(clear_module_state->__pyx_n_s_text);
   Py_CLEAR(clear_module_state->__pyx_n_s_uuid);
-  Py_CLEAR(clear_module_state->__pyx_n_s_version);
+  Py_CLEAR(clear_module_state->__pyx_kp_u_var_lib_dbus_machine_id);
+  Py_CLEAR(clear_module_state->__pyx_n_u_w);
   Py_CLEAR(clear_module_state->__pyx_n_s_win32api);
-  Py_CLEAR(clear_module_state->__pyx_int_neg_1);
-  Py_CLEAR(clear_module_state->__pyx_slice__4);
+  Py_CLEAR(clear_module_state->__pyx_n_s_win32security);
+  Py_CLEAR(clear_module_state->__pyx_n_s_wmi);
+  Py_CLEAR(clear_module_state->__pyx_n_s_write);
   Py_CLEAR(clear_module_state->__pyx_tuple__5);
   Py_CLEAR(clear_module_state->__pyx_tuple__6);
   Py_CLEAR(clear_module_state->__pyx_tuple__7);
-  Py_CLEAR(clear_module_state->__pyx_tuple__9);
-  Py_CLEAR(clear_module_state->__pyx_codeobj__10);
+  Py_CLEAR(clear_module_state->__pyx_tuple__8);
+  Py_CLEAR(clear_module_state->__pyx_codeobj__9);
   return 0;
 }
 #endif
@@ -2388,19 +2500,35 @@ static int __pyx_m_traverse(PyObject *m, visitproc visit, void *arg) {
   Py_VISIT(traverse_module_state->__pyx_FusedFunctionType);
   #endif
   Py_VISIT(traverse_module_state->__pyx_kp_u_);
-  Py_VISIT(traverse_module_state->__pyx_n_s_GetLogicalDriveStrings);
+  Py_VISIT(traverse_module_state->__pyx_kp_u_0000000000);
+  Py_VISIT(traverse_module_state->__pyx_kp_u_C);
+  Py_VISIT(traverse_module_state->__pyx_n_u_Darwin);
+  Py_VISIT(traverse_module_state->__pyx_n_s_GetVolumeInformation);
+  Py_VISIT(traverse_module_state->__pyx_kp_u_Hardware_UUID);
+  Py_VISIT(traverse_module_state->__pyx_n_u_SPHardwareDataType);
+  Py_VISIT(traverse_module_state->__pyx_n_s_SerialNumber);
+  Py_VISIT(traverse_module_state->__pyx_kp_u_Serial_Number);
+  Py_VISIT(traverse_module_state->__pyx_n_s_WMI);
+  Py_VISIT(traverse_module_state->__pyx_n_s_Win32_BIOS);
   Py_VISIT(traverse_module_state->__pyx_n_u_Windows);
-  Py_VISIT(traverse_module_state->__pyx_n_s__11);
+  Py_VISIT(traverse_module_state->__pyx_n_s__10);
   Py_VISIT(traverse_module_state->__pyx_n_s__2);
   Py_VISIT(traverse_module_state->__pyx_kp_u__3);
-  Py_VISIT(traverse_module_state->__pyx_kp_u__8);
+  Py_VISIT(traverse_module_state->__pyx_kp_u__4);
   Py_VISIT(traverse_module_state->__pyx_n_s_asyncio_coroutines);
+  Py_VISIT(traverse_module_state->__pyx_n_s_cached_id);
+  Py_VISIT(traverse_module_state->__pyx_n_s_capture_output);
   Py_VISIT(traverse_module_state->__pyx_n_s_cline_in_traceback);
+  Py_VISIT(traverse_module_state->__pyx_kp_u_docgen_cache);
   Py_VISIT(traverse_module_state->__pyx_n_s_docgen_utils__machine_utils);
   Py_VISIT(traverse_module_state->__pyx_kp_s_docgen_utils__machine_utils_pyx);
   Py_VISIT(traverse_module_state->__pyx_n_s_enter);
   Py_VISIT(traverse_module_state->__pyx_kp_u_etc_machine_id);
+  Py_VISIT(traverse_module_state->__pyx_n_s_exist_ok);
+  Py_VISIT(traverse_module_state->__pyx_n_s_exists);
   Py_VISIT(traverse_module_state->__pyx_n_s_exit);
+  Py_VISIT(traverse_module_state->__pyx_n_s_expanduser);
+  Py_VISIT(traverse_module_state->__pyx_n_s_fallback_id);
   Py_VISIT(traverse_module_state->__pyx_n_s_get_machine_id);
   Py_VISIT(traverse_module_state->__pyx_n_s_getnode);
   Py_VISIT(traverse_module_state->__pyx_n_s_hashlib);
@@ -2408,38 +2536,46 @@ static int __pyx_m_traverse(PyObject *m, visitproc visit, void *arg) {
   Py_VISIT(traverse_module_state->__pyx_n_s_import);
   Py_VISIT(traverse_module_state->__pyx_n_s_initializing);
   Py_VISIT(traverse_module_state->__pyx_n_s_is_coroutine);
-  Py_VISIT(traverse_module_state->__pyx_n_s_machine);
-  Py_VISIT(traverse_module_state->__pyx_n_s_machine_id);
+  Py_VISIT(traverse_module_state->__pyx_n_s_join);
+  Py_VISIT(traverse_module_state->__pyx_kp_u_machine_id);
+  Py_VISIT(traverse_module_state->__pyx_n_s_machine_id_2);
   Py_VISIT(traverse_module_state->__pyx_n_s_main);
-  Py_VISIT(traverse_module_state->__pyx_kp_u_model_name);
+  Py_VISIT(traverse_module_state->__pyx_n_s_makedirs);
   Py_VISIT(traverse_module_state->__pyx_n_s_name);
-  Py_VISIT(traverse_module_state->__pyx_n_s_node);
   Py_VISIT(traverse_module_state->__pyx_n_s_open);
+  Py_VISIT(traverse_module_state->__pyx_n_s_os);
+  Py_VISIT(traverse_module_state->__pyx_n_s_path);
   Py_VISIT(traverse_module_state->__pyx_n_s_platform);
-  Py_VISIT(traverse_module_state->__pyx_kp_u_proc_cpuinfo);
-  Py_VISIT(traverse_module_state->__pyx_n_s_processor);
   Py_VISIT(traverse_module_state->__pyx_n_u_r);
   Py_VISIT(traverse_module_state->__pyx_n_s_read);
   Py_VISIT(traverse_module_state->__pyx_n_s_return);
+  Py_VISIT(traverse_module_state->__pyx_n_s_run);
   Py_VISIT(traverse_module_state->__pyx_n_s_sha256);
   Py_VISIT(traverse_module_state->__pyx_n_s_spec);
   Py_VISIT(traverse_module_state->__pyx_n_s_split);
-  Py_VISIT(traverse_module_state->__pyx_n_s_startswith);
+  Py_VISIT(traverse_module_state->__pyx_n_s_stdout);
   Py_VISIT(traverse_module_state->__pyx_n_s_str);
   Py_VISIT(traverse_module_state->__pyx_n_s_strip);
+  Py_VISIT(traverse_module_state->__pyx_n_s_subprocess);
+  Py_VISIT(traverse_module_state->__pyx_kp_u_sys_class_dmi_id_board_serial);
+  Py_VISIT(traverse_module_state->__pyx_kp_u_sys_class_dmi_id_product_uuid);
   Py_VISIT(traverse_module_state->__pyx_n_s_system);
   Py_VISIT(traverse_module_state->__pyx_n_s_system_info);
+  Py_VISIT(traverse_module_state->__pyx_n_u_system_profiler);
   Py_VISIT(traverse_module_state->__pyx_n_s_test);
+  Py_VISIT(traverse_module_state->__pyx_n_s_text);
   Py_VISIT(traverse_module_state->__pyx_n_s_uuid);
-  Py_VISIT(traverse_module_state->__pyx_n_s_version);
+  Py_VISIT(traverse_module_state->__pyx_kp_u_var_lib_dbus_machine_id);
+  Py_VISIT(traverse_module_state->__pyx_n_u_w);
   Py_VISIT(traverse_module_state->__pyx_n_s_win32api);
-  Py_VISIT(traverse_module_state->__pyx_int_neg_1);
-  Py_VISIT(traverse_module_state->__pyx_slice__4);
+  Py_VISIT(traverse_module_state->__pyx_n_s_win32security);
+  Py_VISIT(traverse_module_state->__pyx_n_s_wmi);
+  Py_VISIT(traverse_module_state->__pyx_n_s_write);
   Py_VISIT(traverse_module_state->__pyx_tuple__5);
   Py_VISIT(traverse_module_state->__pyx_tuple__6);
   Py_VISIT(traverse_module_state->__pyx_tuple__7);
-  Py_VISIT(traverse_module_state->__pyx_tuple__9);
-  Py_VISIT(traverse_module_state->__pyx_codeobj__10);
+  Py_VISIT(traverse_module_state->__pyx_tuple__8);
+  Py_VISIT(traverse_module_state->__pyx_codeobj__9);
   return 0;
 }
 #endif
@@ -2473,19 +2609,35 @@ static int __pyx_m_traverse(PyObject *m, visitproc visit, void *arg) {
 #if CYTHON_USE_MODULE_STATE
 #endif
 #define __pyx_kp_u_ __pyx_mstate_global->__pyx_kp_u_
-#define __pyx_n_s_GetLogicalDriveStrings __pyx_mstate_global->__pyx_n_s_GetLogicalDriveStrings
+#define __pyx_kp_u_0000000000 __pyx_mstate_global->__pyx_kp_u_0000000000
+#define __pyx_kp_u_C __pyx_mstate_global->__pyx_kp_u_C
+#define __pyx_n_u_Darwin __pyx_mstate_global->__pyx_n_u_Darwin
+#define __pyx_n_s_GetVolumeInformation __pyx_mstate_global->__pyx_n_s_GetVolumeInformation
+#define __pyx_kp_u_Hardware_UUID __pyx_mstate_global->__pyx_kp_u_Hardware_UUID
+#define __pyx_n_u_SPHardwareDataType __pyx_mstate_global->__pyx_n_u_SPHardwareDataType
+#define __pyx_n_s_SerialNumber __pyx_mstate_global->__pyx_n_s_SerialNumber
+#define __pyx_kp_u_Serial_Number __pyx_mstate_global->__pyx_kp_u_Serial_Number
+#define __pyx_n_s_WMI __pyx_mstate_global->__pyx_n_s_WMI
+#define __pyx_n_s_Win32_BIOS __pyx_mstate_global->__pyx_n_s_Win32_BIOS
 #define __pyx_n_u_Windows __pyx_mstate_global->__pyx_n_u_Windows
-#define __pyx_n_s__11 __pyx_mstate_global->__pyx_n_s__11
+#define __pyx_n_s__10 __pyx_mstate_global->__pyx_n_s__10
 #define __pyx_n_s__2 __pyx_mstate_global->__pyx_n_s__2
 #define __pyx_kp_u__3 __pyx_mstate_global->__pyx_kp_u__3
-#define __pyx_kp_u__8 __pyx_mstate_global->__pyx_kp_u__8
+#define __pyx_kp_u__4 __pyx_mstate_global->__pyx_kp_u__4
 #define __pyx_n_s_asyncio_coroutines __pyx_mstate_global->__pyx_n_s_asyncio_coroutines
+#define __pyx_n_s_cached_id __pyx_mstate_global->__pyx_n_s_cached_id
+#define __pyx_n_s_capture_output __pyx_mstate_global->__pyx_n_s_capture_output
 #define __pyx_n_s_cline_in_traceback __pyx_mstate_global->__pyx_n_s_cline_in_traceback
+#define __pyx_kp_u_docgen_cache __pyx_mstate_global->__pyx_kp_u_docgen_cache
 #define __pyx_n_s_docgen_utils__machine_utils __pyx_mstate_global->__pyx_n_s_docgen_utils__machine_utils
 #define __pyx_kp_s_docgen_utils__machine_utils_pyx __pyx_mstate_global->__pyx_kp_s_docgen_utils__machine_utils_pyx
 #define __pyx_n_s_enter __pyx_mstate_global->__pyx_n_s_enter
 #define __pyx_kp_u_etc_machine_id __pyx_mstate_global->__pyx_kp_u_etc_machine_id
+#define __pyx_n_s_exist_ok __pyx_mstate_global->__pyx_n_s_exist_ok
+#define __pyx_n_s_exists __pyx_mstate_global->__pyx_n_s_exists
 #define __pyx_n_s_exit __pyx_mstate_global->__pyx_n_s_exit
+#define __pyx_n_s_expanduser __pyx_mstate_global->__pyx_n_s_expanduser
+#define __pyx_n_s_fallback_id __pyx_mstate_global->__pyx_n_s_fallback_id
 #define __pyx_n_s_get_machine_id __pyx_mstate_global->__pyx_n_s_get_machine_id
 #define __pyx_n_s_getnode __pyx_mstate_global->__pyx_n_s_getnode
 #define __pyx_n_s_hashlib __pyx_mstate_global->__pyx_n_s_hashlib
@@ -2493,41 +2645,49 @@ static int __pyx_m_traverse(PyObject *m, visitproc visit, void *arg) {
 #define __pyx_n_s_import __pyx_mstate_global->__pyx_n_s_import
 #define __pyx_n_s_initializing __pyx_mstate_global->__pyx_n_s_initializing
 #define __pyx_n_s_is_coroutine __pyx_mstate_global->__pyx_n_s_is_coroutine
-#define __pyx_n_s_machine __pyx_mstate_global->__pyx_n_s_machine
-#define __pyx_n_s_machine_id __pyx_mstate_global->__pyx_n_s_machine_id
+#define __pyx_n_s_join __pyx_mstate_global->__pyx_n_s_join
+#define __pyx_kp_u_machine_id __pyx_mstate_global->__pyx_kp_u_machine_id
+#define __pyx_n_s_machine_id_2 __pyx_mstate_global->__pyx_n_s_machine_id_2
 #define __pyx_n_s_main __pyx_mstate_global->__pyx_n_s_main
-#define __pyx_kp_u_model_name __pyx_mstate_global->__pyx_kp_u_model_name
+#define __pyx_n_s_makedirs __pyx_mstate_global->__pyx_n_s_makedirs
 #define __pyx_n_s_name __pyx_mstate_global->__pyx_n_s_name
-#define __pyx_n_s_node __pyx_mstate_global->__pyx_n_s_node
 #define __pyx_n_s_open __pyx_mstate_global->__pyx_n_s_open
+#define __pyx_n_s_os __pyx_mstate_global->__pyx_n_s_os
+#define __pyx_n_s_path __pyx_mstate_global->__pyx_n_s_path
 #define __pyx_n_s_platform __pyx_mstate_global->__pyx_n_s_platform
-#define __pyx_kp_u_proc_cpuinfo __pyx_mstate_global->__pyx_kp_u_proc_cpuinfo
-#define __pyx_n_s_processor __pyx_mstate_global->__pyx_n_s_processor
 #define __pyx_n_u_r __pyx_mstate_global->__pyx_n_u_r
 #define __pyx_n_s_read __pyx_mstate_global->__pyx_n_s_read
 #define __pyx_n_s_return __pyx_mstate_global->__pyx_n_s_return
+#define __pyx_n_s_run __pyx_mstate_global->__pyx_n_s_run
 #define __pyx_n_s_sha256 __pyx_mstate_global->__pyx_n_s_sha256
 #define __pyx_n_s_spec __pyx_mstate_global->__pyx_n_s_spec
 #define __pyx_n_s_split __pyx_mstate_global->__pyx_n_s_split
-#define __pyx_n_s_startswith __pyx_mstate_global->__pyx_n_s_startswith
+#define __pyx_n_s_stdout __pyx_mstate_global->__pyx_n_s_stdout
 #define __pyx_n_s_str __pyx_mstate_global->__pyx_n_s_str
 #define __pyx_n_s_strip __pyx_mstate_global->__pyx_n_s_strip
+#define __pyx_n_s_subprocess __pyx_mstate_global->__pyx_n_s_subprocess
+#define __pyx_kp_u_sys_class_dmi_id_board_serial __pyx_mstate_global->__pyx_kp_u_sys_class_dmi_id_board_serial
+#define __pyx_kp_u_sys_class_dmi_id_product_uuid __pyx_mstate_global->__pyx_kp_u_sys_class_dmi_id_product_uuid
 #define __pyx_n_s_system __pyx_mstate_global->__pyx_n_s_system
 #define __pyx_n_s_system_info __pyx_mstate_global->__pyx_n_s_system_info
+#define __pyx_n_u_system_profiler __pyx_mstate_global->__pyx_n_u_system_profiler
 #define __pyx_n_s_test __pyx_mstate_global->__pyx_n_s_test
+#define __pyx_n_s_text __pyx_mstate_global->__pyx_n_s_text
 #define __pyx_n_s_uuid __pyx_mstate_global->__pyx_n_s_uuid
-#define __pyx_n_s_version __pyx_mstate_global->__pyx_n_s_version
+#define __pyx_kp_u_var_lib_dbus_machine_id __pyx_mstate_global->__pyx_kp_u_var_lib_dbus_machine_id
+#define __pyx_n_u_w __pyx_mstate_global->__pyx_n_u_w
 #define __pyx_n_s_win32api __pyx_mstate_global->__pyx_n_s_win32api
-#define __pyx_int_neg_1 __pyx_mstate_global->__pyx_int_neg_1
-#define __pyx_slice__4 __pyx_mstate_global->__pyx_slice__4
+#define __pyx_n_s_win32security __pyx_mstate_global->__pyx_n_s_win32security
+#define __pyx_n_s_wmi __pyx_mstate_global->__pyx_n_s_wmi
+#define __pyx_n_s_write __pyx_mstate_global->__pyx_n_s_write
 #define __pyx_tuple__5 __pyx_mstate_global->__pyx_tuple__5
 #define __pyx_tuple__6 __pyx_mstate_global->__pyx_tuple__6
 #define __pyx_tuple__7 __pyx_mstate_global->__pyx_tuple__7
-#define __pyx_tuple__9 __pyx_mstate_global->__pyx_tuple__9
-#define __pyx_codeobj__10 __pyx_mstate_global->__pyx_codeobj__10
+#define __pyx_tuple__8 __pyx_mstate_global->__pyx_tuple__8
+#define __pyx_codeobj__9 __pyx_mstate_global->__pyx_codeobj__9
 /* #### Code section: module_code ### */
 
-/* "docgen/utils/_machine_utils.pyx":9
+/* "docgen/utils/_machine_utils.pyx":10
  * cimport cython
  * 
  * @cython.binding(True)             # <<<<<<<<<<<<<<
@@ -2537,7 +2697,7 @@ static int __pyx_m_traverse(PyObject *m, visitproc visit, void *arg) {
 
 /* Python wrapper */
 static PyObject *__pyx_pw_6docgen_5utils_14_machine_utils_1get_machine_id(PyObject *__pyx_self, CYTHON_UNUSED PyObject *unused); /*proto*/
-PyDoc_STRVAR(__pyx_doc_6docgen_5utils_14_machine_utils_get_machine_id, "get_machine_id() -> str\nGenerate a unique machine identifier with hardware info.");
+PyDoc_STRVAR(__pyx_doc_6docgen_5utils_14_machine_utils_get_machine_id, "Generate a unique machine identifier with hardware info.");
 static PyMethodDef __pyx_mdef_6docgen_5utils_14_machine_utils_1get_machine_id = {"get_machine_id", (PyCFunction)__pyx_pw_6docgen_5utils_14_machine_utils_1get_machine_id, METH_NOARGS, __pyx_doc_6docgen_5utils_14_machine_utils_get_machine_id};
 static PyObject *__pyx_pw_6docgen_5utils_14_machine_utils_1get_machine_id(PyObject *__pyx_self, CYTHON_UNUSED PyObject *unused) {
   CYTHON_UNUSED PyObject *const *__pyx_kwvalues;
@@ -2553,8 +2713,663 @@ static PyObject *__pyx_pw_6docgen_5utils_14_machine_utils_1get_machine_id(PyObje
 }
 
 static PyObject *__pyx_pf_6docgen_5utils_14_machine_utils_get_machine_id(CYTHON_UNUSED PyObject *__pyx_self) {
+  PyObject *__pyx_v_cached_id = NULL;
   PyObject *__pyx_v_system_info = NULL;
   PyObject *__pyx_v_machine_id = NULL;
+  PyObject *__pyx_v_fallback_id = NULL;
+  PyObject *__pyx_r = NULL;
+  __Pyx_RefNannyDeclarations
+  PyObject *__pyx_t_1 = NULL;
+  int __pyx_t_2;
+  PyObject *__pyx_t_3 = NULL;
+  PyObject *__pyx_t_4 = NULL;
+  PyObject *__pyx_t_5 = NULL;
+  PyObject *__pyx_t_6 = NULL;
+  PyObject *__pyx_t_7 = NULL;
+  PyObject *__pyx_t_8 = NULL;
+  PyObject *__pyx_t_9 = NULL;
+  unsigned int __pyx_t_10;
+  PyObject *__pyx_t_11 = NULL;
+  PyObject *__pyx_t_12 = NULL;
+  PyObject *__pyx_t_13 = NULL;
+  PyObject *__pyx_t_14 = NULL;
+  int __pyx_lineno = 0;
+  const char *__pyx_filename = NULL;
+  int __pyx_clineno = 0;
+  __Pyx_RefNannySetupContext("get_machine_id", 1);
+
+  /* "docgen/utils/_machine_utils.pyx":14
+ *     """Generate a unique machine identifier with hardware info."""
+ *     # First try to get from cache file
+ *     cached_id = _get_cached_machine_id()             # <<<<<<<<<<<<<<
+ *     if cached_id:
+ *         return cached_id
+ */
+  __pyx_t_1 = __pyx_f_6docgen_5utils_14_machine_utils__get_cached_machine_id(); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 14, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_1);
+  __pyx_v_cached_id = ((PyObject*)__pyx_t_1);
+  __pyx_t_1 = 0;
+
+  /* "docgen/utils/_machine_utils.pyx":15
+ *     # First try to get from cache file
+ *     cached_id = _get_cached_machine_id()
+ *     if cached_id:             # <<<<<<<<<<<<<<
+ *         return cached_id
+ * 
+ */
+  __pyx_t_2 = (__pyx_v_cached_id != Py_None)&&(__Pyx_PyUnicode_IS_TRUE(__pyx_v_cached_id) != 0);
+  if (__pyx_t_2) {
+
+    /* "docgen/utils/_machine_utils.pyx":16
+ *     cached_id = _get_cached_machine_id()
+ *     if cached_id:
+ *         return cached_id             # <<<<<<<<<<<<<<
+ * 
+ *     # Generate new ID if no cache exists
+ */
+    __Pyx_XDECREF(__pyx_r);
+    __Pyx_INCREF(__pyx_v_cached_id);
+    __pyx_r = __pyx_v_cached_id;
+    goto __pyx_L0;
+
+    /* "docgen/utils/_machine_utils.pyx":15
+ *     # First try to get from cache file
+ *     cached_id = _get_cached_machine_id()
+ *     if cached_id:             # <<<<<<<<<<<<<<
+ *         return cached_id
+ * 
+ */
+  }
+
+  /* "docgen/utils/_machine_utils.pyx":19
+ * 
+ *     # Generate new ID if no cache exists
+ *     try:             # <<<<<<<<<<<<<<
+ *         system_info = _get_stable_system_info()
+ *         machine_id = hashlib.sha256(''.join(system_info).encode()).hexdigest()
+ */
+  {
+    __Pyx_PyThreadState_declare
+    __Pyx_PyThreadState_assign
+    __Pyx_ExceptionSave(&__pyx_t_3, &__pyx_t_4, &__pyx_t_5);
+    __Pyx_XGOTREF(__pyx_t_3);
+    __Pyx_XGOTREF(__pyx_t_4);
+    __Pyx_XGOTREF(__pyx_t_5);
+    /*try:*/ {
+
+      /* "docgen/utils/_machine_utils.pyx":20
+ *     # Generate new ID if no cache exists
+ *     try:
+ *         system_info = _get_stable_system_info()             # <<<<<<<<<<<<<<
+ *         machine_id = hashlib.sha256(''.join(system_info).encode()).hexdigest()
+ *         _save_machine_id(machine_id)
+ */
+      __pyx_t_1 = __pyx_f_6docgen_5utils_14_machine_utils__get_stable_system_info(); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 20, __pyx_L4_error)
+      __Pyx_GOTREF(__pyx_t_1);
+      __pyx_v_system_info = ((PyObject*)__pyx_t_1);
+      __pyx_t_1 = 0;
+
+      /* "docgen/utils/_machine_utils.pyx":21
+ *     try:
+ *         system_info = _get_stable_system_info()
+ *         machine_id = hashlib.sha256(''.join(system_info).encode()).hexdigest()             # <<<<<<<<<<<<<<
+ *         _save_machine_id(machine_id)
+ *         return machine_id
+ */
+      __Pyx_GetModuleGlobalName(__pyx_t_7, __pyx_n_s_hashlib); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 21, __pyx_L4_error)
+      __Pyx_GOTREF(__pyx_t_7);
+      __pyx_t_8 = __Pyx_PyObject_GetAttrStr(__pyx_t_7, __pyx_n_s_sha256); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 21, __pyx_L4_error)
+      __Pyx_GOTREF(__pyx_t_8);
+      __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
+      __pyx_t_7 = PyUnicode_Join(__pyx_kp_u_, __pyx_v_system_info); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 21, __pyx_L4_error)
+      __Pyx_GOTREF(__pyx_t_7);
+      __pyx_t_9 = PyUnicode_AsEncodedString(((PyObject*)__pyx_t_7), NULL, NULL); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 21, __pyx_L4_error)
+      __Pyx_GOTREF(__pyx_t_9);
+      __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
+      __pyx_t_7 = NULL;
+      __pyx_t_10 = 0;
+      #if CYTHON_UNPACK_METHODS
+      if (unlikely(PyMethod_Check(__pyx_t_8))) {
+        __pyx_t_7 = PyMethod_GET_SELF(__pyx_t_8);
+        if (likely(__pyx_t_7)) {
+          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_8);
+          __Pyx_INCREF(__pyx_t_7);
+          __Pyx_INCREF(function);
+          __Pyx_DECREF_SET(__pyx_t_8, function);
+          __pyx_t_10 = 1;
+        }
+      }
+      #endif
+      {
+        PyObject *__pyx_callargs[2] = {__pyx_t_7, __pyx_t_9};
+        __pyx_t_6 = __Pyx_PyObject_FastCall(__pyx_t_8, __pyx_callargs+1-__pyx_t_10, 1+__pyx_t_10);
+        __Pyx_XDECREF(__pyx_t_7); __pyx_t_7 = 0;
+        __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
+        if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 21, __pyx_L4_error)
+        __Pyx_GOTREF(__pyx_t_6);
+        __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+      }
+      __pyx_t_8 = __Pyx_PyObject_GetAttrStr(__pyx_t_6, __pyx_n_s_hexdigest); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 21, __pyx_L4_error)
+      __Pyx_GOTREF(__pyx_t_8);
+      __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+      __pyx_t_6 = NULL;
+      __pyx_t_10 = 0;
+      #if CYTHON_UNPACK_METHODS
+      if (likely(PyMethod_Check(__pyx_t_8))) {
+        __pyx_t_6 = PyMethod_GET_SELF(__pyx_t_8);
+        if (likely(__pyx_t_6)) {
+          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_8);
+          __Pyx_INCREF(__pyx_t_6);
+          __Pyx_INCREF(function);
+          __Pyx_DECREF_SET(__pyx_t_8, function);
+          __pyx_t_10 = 1;
+        }
+      }
+      #endif
+      {
+        PyObject *__pyx_callargs[2] = {__pyx_t_6, NULL};
+        __pyx_t_1 = __Pyx_PyObject_FastCall(__pyx_t_8, __pyx_callargs+1-__pyx_t_10, 0+__pyx_t_10);
+        __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+        if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 21, __pyx_L4_error)
+        __Pyx_GOTREF(__pyx_t_1);
+        __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+      }
+      __pyx_v_machine_id = __pyx_t_1;
+      __pyx_t_1 = 0;
+
+      /* "docgen/utils/_machine_utils.pyx":22
+ *         system_info = _get_stable_system_info()
+ *         machine_id = hashlib.sha256(''.join(system_info).encode()).hexdigest()
+ *         _save_machine_id(machine_id)             # <<<<<<<<<<<<<<
+ *         return machine_id
+ *     except:
+ */
+      if (!(likely(PyUnicode_CheckExact(__pyx_v_machine_id))||((__pyx_v_machine_id) == Py_None) || __Pyx_RaiseUnexpectedTypeError("unicode", __pyx_v_machine_id))) __PYX_ERR(0, 22, __pyx_L4_error)
+      __pyx_f_6docgen_5utils_14_machine_utils__save_machine_id(((PyObject*)__pyx_v_machine_id)); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 22, __pyx_L4_error)
+
+      /* "docgen/utils/_machine_utils.pyx":23
+ *         machine_id = hashlib.sha256(''.join(system_info).encode()).hexdigest()
+ *         _save_machine_id(machine_id)
+ *         return machine_id             # <<<<<<<<<<<<<<
+ *     except:
+ *         # Fallback to MAC-based ID
+ */
+      __Pyx_XDECREF(__pyx_r);
+      if (!(likely(PyUnicode_CheckExact(__pyx_v_machine_id))||((__pyx_v_machine_id) == Py_None) || __Pyx_RaiseUnexpectedTypeError("unicode", __pyx_v_machine_id))) __PYX_ERR(0, 23, __pyx_L4_error)
+      __Pyx_INCREF(__pyx_v_machine_id);
+      __pyx_r = ((PyObject*)__pyx_v_machine_id);
+      goto __pyx_L8_try_return;
+
+      /* "docgen/utils/_machine_utils.pyx":19
+ * 
+ *     # Generate new ID if no cache exists
+ *     try:             # <<<<<<<<<<<<<<
+ *         system_info = _get_stable_system_info()
+ *         machine_id = hashlib.sha256(''.join(system_info).encode()).hexdigest()
+ */
+    }
+    __pyx_L4_error:;
+    __Pyx_XDECREF(__pyx_t_1); __pyx_t_1 = 0;
+    __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+    __Pyx_XDECREF(__pyx_t_7); __pyx_t_7 = 0;
+    __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
+    __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
+
+    /* "docgen/utils/_machine_utils.pyx":24
+ *         _save_machine_id(machine_id)
+ *         return machine_id
+ *     except:             # <<<<<<<<<<<<<<
+ *         # Fallback to MAC-based ID
+ *         fallback_id = hashlib.sha256(str(uuid.getnode()).encode()).hexdigest()
+ */
+    /*except:*/ {
+      __Pyx_AddTraceback("docgen.utils._machine_utils.get_machine_id", __pyx_clineno, __pyx_lineno, __pyx_filename);
+      if (__Pyx_GetException(&__pyx_t_1, &__pyx_t_8, &__pyx_t_6) < 0) __PYX_ERR(0, 24, __pyx_L6_except_error)
+      __Pyx_XGOTREF(__pyx_t_1);
+      __Pyx_XGOTREF(__pyx_t_8);
+      __Pyx_XGOTREF(__pyx_t_6);
+
+      /* "docgen/utils/_machine_utils.pyx":26
+ *     except:
+ *         # Fallback to MAC-based ID
+ *         fallback_id = hashlib.sha256(str(uuid.getnode()).encode()).hexdigest()             # <<<<<<<<<<<<<<
+ *         _save_machine_id(fallback_id)
+ *         return fallback_id
+ */
+      __Pyx_GetModuleGlobalName(__pyx_t_11, __pyx_n_s_hashlib); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 26, __pyx_L6_except_error)
+      __Pyx_GOTREF(__pyx_t_11);
+      __pyx_t_12 = __Pyx_PyObject_GetAttrStr(__pyx_t_11, __pyx_n_s_sha256); if (unlikely(!__pyx_t_12)) __PYX_ERR(0, 26, __pyx_L6_except_error)
+      __Pyx_GOTREF(__pyx_t_12);
+      __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
+      __Pyx_GetModuleGlobalName(__pyx_t_13, __pyx_n_s_uuid); if (unlikely(!__pyx_t_13)) __PYX_ERR(0, 26, __pyx_L6_except_error)
+      __Pyx_GOTREF(__pyx_t_13);
+      __pyx_t_14 = __Pyx_PyObject_GetAttrStr(__pyx_t_13, __pyx_n_s_getnode); if (unlikely(!__pyx_t_14)) __PYX_ERR(0, 26, __pyx_L6_except_error)
+      __Pyx_GOTREF(__pyx_t_14);
+      __Pyx_DECREF(__pyx_t_13); __pyx_t_13 = 0;
+      __pyx_t_13 = NULL;
+      __pyx_t_10 = 0;
+      #if CYTHON_UNPACK_METHODS
+      if (unlikely(PyMethod_Check(__pyx_t_14))) {
+        __pyx_t_13 = PyMethod_GET_SELF(__pyx_t_14);
+        if (likely(__pyx_t_13)) {
+          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_14);
+          __Pyx_INCREF(__pyx_t_13);
+          __Pyx_INCREF(function);
+          __Pyx_DECREF_SET(__pyx_t_14, function);
+          __pyx_t_10 = 1;
+        }
+      }
+      #endif
+      {
+        PyObject *__pyx_callargs[2] = {__pyx_t_13, NULL};
+        __pyx_t_11 = __Pyx_PyObject_FastCall(__pyx_t_14, __pyx_callargs+1-__pyx_t_10, 0+__pyx_t_10);
+        __Pyx_XDECREF(__pyx_t_13); __pyx_t_13 = 0;
+        if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 26, __pyx_L6_except_error)
+        __Pyx_GOTREF(__pyx_t_11);
+        __Pyx_DECREF(__pyx_t_14); __pyx_t_14 = 0;
+      }
+      __pyx_t_14 = __Pyx_PyObject_Unicode(__pyx_t_11); if (unlikely(!__pyx_t_14)) __PYX_ERR(0, 26, __pyx_L6_except_error)
+      __Pyx_GOTREF(__pyx_t_14);
+      __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
+      __pyx_t_11 = PyUnicode_AsEncodedString(((PyObject*)__pyx_t_14), NULL, NULL); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 26, __pyx_L6_except_error)
+      __Pyx_GOTREF(__pyx_t_11);
+      __Pyx_DECREF(__pyx_t_14); __pyx_t_14 = 0;
+      __pyx_t_14 = NULL;
+      __pyx_t_10 = 0;
+      #if CYTHON_UNPACK_METHODS
+      if (unlikely(PyMethod_Check(__pyx_t_12))) {
+        __pyx_t_14 = PyMethod_GET_SELF(__pyx_t_12);
+        if (likely(__pyx_t_14)) {
+          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_12);
+          __Pyx_INCREF(__pyx_t_14);
+          __Pyx_INCREF(function);
+          __Pyx_DECREF_SET(__pyx_t_12, function);
+          __pyx_t_10 = 1;
+        }
+      }
+      #endif
+      {
+        PyObject *__pyx_callargs[2] = {__pyx_t_14, __pyx_t_11};
+        __pyx_t_7 = __Pyx_PyObject_FastCall(__pyx_t_12, __pyx_callargs+1-__pyx_t_10, 1+__pyx_t_10);
+        __Pyx_XDECREF(__pyx_t_14); __pyx_t_14 = 0;
+        __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
+        if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 26, __pyx_L6_except_error)
+        __Pyx_GOTREF(__pyx_t_7);
+        __Pyx_DECREF(__pyx_t_12); __pyx_t_12 = 0;
+      }
+      __pyx_t_12 = __Pyx_PyObject_GetAttrStr(__pyx_t_7, __pyx_n_s_hexdigest); if (unlikely(!__pyx_t_12)) __PYX_ERR(0, 26, __pyx_L6_except_error)
+      __Pyx_GOTREF(__pyx_t_12);
+      __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
+      __pyx_t_7 = NULL;
+      __pyx_t_10 = 0;
+      #if CYTHON_UNPACK_METHODS
+      if (likely(PyMethod_Check(__pyx_t_12))) {
+        __pyx_t_7 = PyMethod_GET_SELF(__pyx_t_12);
+        if (likely(__pyx_t_7)) {
+          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_12);
+          __Pyx_INCREF(__pyx_t_7);
+          __Pyx_INCREF(function);
+          __Pyx_DECREF_SET(__pyx_t_12, function);
+          __pyx_t_10 = 1;
+        }
+      }
+      #endif
+      {
+        PyObject *__pyx_callargs[2] = {__pyx_t_7, NULL};
+        __pyx_t_9 = __Pyx_PyObject_FastCall(__pyx_t_12, __pyx_callargs+1-__pyx_t_10, 0+__pyx_t_10);
+        __Pyx_XDECREF(__pyx_t_7); __pyx_t_7 = 0;
+        if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 26, __pyx_L6_except_error)
+        __Pyx_GOTREF(__pyx_t_9);
+        __Pyx_DECREF(__pyx_t_12); __pyx_t_12 = 0;
+      }
+      __pyx_v_fallback_id = __pyx_t_9;
+      __pyx_t_9 = 0;
+
+      /* "docgen/utils/_machine_utils.pyx":27
+ *         # Fallback to MAC-based ID
+ *         fallback_id = hashlib.sha256(str(uuid.getnode()).encode()).hexdigest()
+ *         _save_machine_id(fallback_id)             # <<<<<<<<<<<<<<
+ *         return fallback_id
+ * 
+ */
+      if (!(likely(PyUnicode_CheckExact(__pyx_v_fallback_id))||((__pyx_v_fallback_id) == Py_None) || __Pyx_RaiseUnexpectedTypeError("unicode", __pyx_v_fallback_id))) __PYX_ERR(0, 27, __pyx_L6_except_error)
+      __pyx_f_6docgen_5utils_14_machine_utils__save_machine_id(((PyObject*)__pyx_v_fallback_id)); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 27, __pyx_L6_except_error)
+
+      /* "docgen/utils/_machine_utils.pyx":28
+ *         fallback_id = hashlib.sha256(str(uuid.getnode()).encode()).hexdigest()
+ *         _save_machine_id(fallback_id)
+ *         return fallback_id             # <<<<<<<<<<<<<<
+ * 
+ * cdef list _get_stable_system_info():
+ */
+      __Pyx_XDECREF(__pyx_r);
+      if (!(likely(PyUnicode_CheckExact(__pyx_v_fallback_id))||((__pyx_v_fallback_id) == Py_None) || __Pyx_RaiseUnexpectedTypeError("unicode", __pyx_v_fallback_id))) __PYX_ERR(0, 28, __pyx_L6_except_error)
+      __Pyx_INCREF(__pyx_v_fallback_id);
+      __pyx_r = ((PyObject*)__pyx_v_fallback_id);
+      __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+      __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+      __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+      goto __pyx_L7_except_return;
+    }
+
+    /* "docgen/utils/_machine_utils.pyx":19
+ * 
+ *     # Generate new ID if no cache exists
+ *     try:             # <<<<<<<<<<<<<<
+ *         system_info = _get_stable_system_info()
+ *         machine_id = hashlib.sha256(''.join(system_info).encode()).hexdigest()
+ */
+    __pyx_L6_except_error:;
+    __Pyx_XGIVEREF(__pyx_t_3);
+    __Pyx_XGIVEREF(__pyx_t_4);
+    __Pyx_XGIVEREF(__pyx_t_5);
+    __Pyx_ExceptionReset(__pyx_t_3, __pyx_t_4, __pyx_t_5);
+    goto __pyx_L1_error;
+    __pyx_L8_try_return:;
+    __Pyx_XGIVEREF(__pyx_t_3);
+    __Pyx_XGIVEREF(__pyx_t_4);
+    __Pyx_XGIVEREF(__pyx_t_5);
+    __Pyx_ExceptionReset(__pyx_t_3, __pyx_t_4, __pyx_t_5);
+    goto __pyx_L0;
+    __pyx_L7_except_return:;
+    __Pyx_XGIVEREF(__pyx_t_3);
+    __Pyx_XGIVEREF(__pyx_t_4);
+    __Pyx_XGIVEREF(__pyx_t_5);
+    __Pyx_ExceptionReset(__pyx_t_3, __pyx_t_4, __pyx_t_5);
+    goto __pyx_L0;
+  }
+
+  /* "docgen/utils/_machine_utils.pyx":10
+ * cimport cython
+ * 
+ * @cython.binding(True)             # <<<<<<<<<<<<<<
+ * def get_machine_id() -> str:
+ *     """Generate a unique machine identifier with hardware info."""
+ */
+
+  /* function exit code */
+  __pyx_L1_error:;
+  __Pyx_XDECREF(__pyx_t_1);
+  __Pyx_XDECREF(__pyx_t_6);
+  __Pyx_XDECREF(__pyx_t_7);
+  __Pyx_XDECREF(__pyx_t_8);
+  __Pyx_XDECREF(__pyx_t_9);
+  __Pyx_XDECREF(__pyx_t_11);
+  __Pyx_XDECREF(__pyx_t_12);
+  __Pyx_XDECREF(__pyx_t_13);
+  __Pyx_XDECREF(__pyx_t_14);
+  __Pyx_AddTraceback("docgen.utils._machine_utils.get_machine_id", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __pyx_r = NULL;
+  __pyx_L0:;
+  __Pyx_XDECREF(__pyx_v_cached_id);
+  __Pyx_XDECREF(__pyx_v_system_info);
+  __Pyx_XDECREF(__pyx_v_machine_id);
+  __Pyx_XDECREF(__pyx_v_fallback_id);
+  __Pyx_XGIVEREF(__pyx_r);
+  __Pyx_RefNannyFinishContext();
+  return __pyx_r;
+}
+
+/* "docgen/utils/_machine_utils.pyx":30
+ *         return fallback_id
+ * 
+ * cdef list _get_stable_system_info():             # <<<<<<<<<<<<<<
+ *     """Get stable system information across platforms."""
+ *     info = []
+ */
+
+static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_stable_system_info(void) {
+  PyObject *__pyx_v_info = NULL;
+  PyObject *__pyx_r = NULL;
+  __Pyx_RefNannyDeclarations
+  PyObject *__pyx_t_1 = NULL;
+  PyObject *__pyx_t_2 = NULL;
+  PyObject *__pyx_t_3 = NULL;
+  unsigned int __pyx_t_4;
+  int __pyx_t_5;
+  int __pyx_t_6;
+  int __pyx_lineno = 0;
+  const char *__pyx_filename = NULL;
+  int __pyx_clineno = 0;
+  __Pyx_RefNannySetupContext("_get_stable_system_info", 1);
+
+  /* "docgen/utils/_machine_utils.pyx":32
+ * cdef list _get_stable_system_info():
+ *     """Get stable system information across platforms."""
+ *     info = []             # <<<<<<<<<<<<<<
+ * 
+ *     # MAC address (generally stable)
+ */
+  __pyx_t_1 = PyList_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 32, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_1);
+  __pyx_v_info = ((PyObject*)__pyx_t_1);
+  __pyx_t_1 = 0;
+
+  /* "docgen/utils/_machine_utils.pyx":35
+ * 
+ *     # MAC address (generally stable)
+ *     info.append(str(uuid.getnode()))             # <<<<<<<<<<<<<<
+ * 
+ *     # OS-specific hardware identifiers
+ */
+  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_n_s_uuid); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 35, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_2);
+  __pyx_t_3 = __Pyx_PyObject_GetAttrStr(__pyx_t_2, __pyx_n_s_getnode); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 35, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_3);
+  __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
+  __pyx_t_2 = NULL;
+  __pyx_t_4 = 0;
+  #if CYTHON_UNPACK_METHODS
+  if (unlikely(PyMethod_Check(__pyx_t_3))) {
+    __pyx_t_2 = PyMethod_GET_SELF(__pyx_t_3);
+    if (likely(__pyx_t_2)) {
+      PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_3);
+      __Pyx_INCREF(__pyx_t_2);
+      __Pyx_INCREF(function);
+      __Pyx_DECREF_SET(__pyx_t_3, function);
+      __pyx_t_4 = 1;
+    }
+  }
+  #endif
+  {
+    PyObject *__pyx_callargs[2] = {__pyx_t_2, NULL};
+    __pyx_t_1 = __Pyx_PyObject_FastCall(__pyx_t_3, __pyx_callargs+1-__pyx_t_4, 0+__pyx_t_4);
+    __Pyx_XDECREF(__pyx_t_2); __pyx_t_2 = 0;
+    if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 35, __pyx_L1_error)
+    __Pyx_GOTREF(__pyx_t_1);
+    __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
+  }
+  __pyx_t_3 = __Pyx_PyObject_Unicode(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 35, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_3);
+  __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+  __pyx_t_5 = __Pyx_PyList_Append(__pyx_v_info, __pyx_t_3); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 35, __pyx_L1_error)
+  __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
+
+  /* "docgen/utils/_machine_utils.pyx":38
+ * 
+ *     # OS-specific hardware identifiers
+ *     if platform.system() == 'Windows':             # <<<<<<<<<<<<<<
+ *         info.extend(_get_windows_info())
+ *     elif platform.system() == 'Darwin':  # macOS
+ */
+  __Pyx_GetModuleGlobalName(__pyx_t_1, __pyx_n_s_platform); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 38, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_1);
+  __pyx_t_2 = __Pyx_PyObject_GetAttrStr(__pyx_t_1, __pyx_n_s_system); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 38, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_2);
+  __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+  __pyx_t_1 = NULL;
+  __pyx_t_4 = 0;
+  #if CYTHON_UNPACK_METHODS
+  if (unlikely(PyMethod_Check(__pyx_t_2))) {
+    __pyx_t_1 = PyMethod_GET_SELF(__pyx_t_2);
+    if (likely(__pyx_t_1)) {
+      PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_2);
+      __Pyx_INCREF(__pyx_t_1);
+      __Pyx_INCREF(function);
+      __Pyx_DECREF_SET(__pyx_t_2, function);
+      __pyx_t_4 = 1;
+    }
+  }
+  #endif
+  {
+    PyObject *__pyx_callargs[2] = {__pyx_t_1, NULL};
+    __pyx_t_3 = __Pyx_PyObject_FastCall(__pyx_t_2, __pyx_callargs+1-__pyx_t_4, 0+__pyx_t_4);
+    __Pyx_XDECREF(__pyx_t_1); __pyx_t_1 = 0;
+    if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 38, __pyx_L1_error)
+    __Pyx_GOTREF(__pyx_t_3);
+    __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
+  }
+  __pyx_t_6 = (__Pyx_PyUnicode_Equals(__pyx_t_3, __pyx_n_u_Windows, Py_EQ)); if (unlikely((__pyx_t_6 < 0))) __PYX_ERR(0, 38, __pyx_L1_error)
+  __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
+  if (__pyx_t_6) {
+
+    /* "docgen/utils/_machine_utils.pyx":39
+ *     # OS-specific hardware identifiers
+ *     if platform.system() == 'Windows':
+ *         info.extend(_get_windows_info())             # <<<<<<<<<<<<<<
+ *     elif platform.system() == 'Darwin':  # macOS
+ *         info.extend(_get_macos_info())
+ */
+    __pyx_t_3 = __pyx_f_6docgen_5utils_14_machine_utils__get_windows_info(); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 39, __pyx_L1_error)
+    __Pyx_GOTREF(__pyx_t_3);
+    __pyx_t_5 = __Pyx_PyList_Extend(__pyx_v_info, __pyx_t_3); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 39, __pyx_L1_error)
+    __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
+
+    /* "docgen/utils/_machine_utils.pyx":38
+ * 
+ *     # OS-specific hardware identifiers
+ *     if platform.system() == 'Windows':             # <<<<<<<<<<<<<<
+ *         info.extend(_get_windows_info())
+ *     elif platform.system() == 'Darwin':  # macOS
+ */
+    goto __pyx_L3;
+  }
+
+  /* "docgen/utils/_machine_utils.pyx":40
+ *     if platform.system() == 'Windows':
+ *         info.extend(_get_windows_info())
+ *     elif platform.system() == 'Darwin':  # macOS             # <<<<<<<<<<<<<<
+ *         info.extend(_get_macos_info())
+ *     else:  # Linux and other Unix-like
+ */
+  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_n_s_platform); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 40, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_2);
+  __pyx_t_1 = __Pyx_PyObject_GetAttrStr(__pyx_t_2, __pyx_n_s_system); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 40, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_1);
+  __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
+  __pyx_t_2 = NULL;
+  __pyx_t_4 = 0;
+  #if CYTHON_UNPACK_METHODS
+  if (unlikely(PyMethod_Check(__pyx_t_1))) {
+    __pyx_t_2 = PyMethod_GET_SELF(__pyx_t_1);
+    if (likely(__pyx_t_2)) {
+      PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_1);
+      __Pyx_INCREF(__pyx_t_2);
+      __Pyx_INCREF(function);
+      __Pyx_DECREF_SET(__pyx_t_1, function);
+      __pyx_t_4 = 1;
+    }
+  }
+  #endif
+  {
+    PyObject *__pyx_callargs[2] = {__pyx_t_2, NULL};
+    __pyx_t_3 = __Pyx_PyObject_FastCall(__pyx_t_1, __pyx_callargs+1-__pyx_t_4, 0+__pyx_t_4);
+    __Pyx_XDECREF(__pyx_t_2); __pyx_t_2 = 0;
+    if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 40, __pyx_L1_error)
+    __Pyx_GOTREF(__pyx_t_3);
+    __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+  }
+  __pyx_t_6 = (__Pyx_PyUnicode_Equals(__pyx_t_3, __pyx_n_u_Darwin, Py_EQ)); if (unlikely((__pyx_t_6 < 0))) __PYX_ERR(0, 40, __pyx_L1_error)
+  __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
+  if (__pyx_t_6) {
+
+    /* "docgen/utils/_machine_utils.pyx":41
+ *         info.extend(_get_windows_info())
+ *     elif platform.system() == 'Darwin':  # macOS
+ *         info.extend(_get_macos_info())             # <<<<<<<<<<<<<<
+ *     else:  # Linux and other Unix-like
+ *         info.extend(_get_linux_info())
+ */
+    __pyx_t_3 = __pyx_f_6docgen_5utils_14_machine_utils__get_macos_info(); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 41, __pyx_L1_error)
+    __Pyx_GOTREF(__pyx_t_3);
+    __pyx_t_5 = __Pyx_PyList_Extend(__pyx_v_info, __pyx_t_3); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 41, __pyx_L1_error)
+    __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
+
+    /* "docgen/utils/_machine_utils.pyx":40
+ *     if platform.system() == 'Windows':
+ *         info.extend(_get_windows_info())
+ *     elif platform.system() == 'Darwin':  # macOS             # <<<<<<<<<<<<<<
+ *         info.extend(_get_macos_info())
+ *     else:  # Linux and other Unix-like
+ */
+    goto __pyx_L3;
+  }
+
+  /* "docgen/utils/_machine_utils.pyx":43
+ *         info.extend(_get_macos_info())
+ *     else:  # Linux and other Unix-like
+ *         info.extend(_get_linux_info())             # <<<<<<<<<<<<<<
+ * 
+ *     return info
+ */
+  /*else*/ {
+    __pyx_t_3 = __pyx_f_6docgen_5utils_14_machine_utils__get_linux_info(); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 43, __pyx_L1_error)
+    __Pyx_GOTREF(__pyx_t_3);
+    __pyx_t_5 = __Pyx_PyList_Extend(__pyx_v_info, __pyx_t_3); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 43, __pyx_L1_error)
+    __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
+  }
+  __pyx_L3:;
+
+  /* "docgen/utils/_machine_utils.pyx":45
+ *         info.extend(_get_linux_info())
+ * 
+ *     return info             # <<<<<<<<<<<<<<
+ * 
+ * cdef list _get_windows_info():
+ */
+  __Pyx_XDECREF(__pyx_r);
+  __Pyx_INCREF(__pyx_v_info);
+  __pyx_r = __pyx_v_info;
+  goto __pyx_L0;
+
+  /* "docgen/utils/_machine_utils.pyx":30
+ *         return fallback_id
+ * 
+ * cdef list _get_stable_system_info():             # <<<<<<<<<<<<<<
+ *     """Get stable system information across platforms."""
+ *     info = []
+ */
+
+  /* function exit code */
+  __pyx_L1_error:;
+  __Pyx_XDECREF(__pyx_t_1);
+  __Pyx_XDECREF(__pyx_t_2);
+  __Pyx_XDECREF(__pyx_t_3);
+  __Pyx_AddTraceback("docgen.utils._machine_utils._get_stable_system_info", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __pyx_r = 0;
+  __pyx_L0:;
+  __Pyx_XDECREF(__pyx_v_info);
+  __Pyx_XGIVEREF(__pyx_r);
+  __Pyx_RefNannyFinishContext();
+  return __pyx_r;
+}
+
+/* "docgen/utils/_machine_utils.pyx":47
+ *     return info
+ * 
+ * cdef list _get_windows_info():             # <<<<<<<<<<<<<<
+ *     """Get stable Windows-specific identifiers."""
+ *     try:
+ */
+
+static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_windows_info(void) {
+  PyObject *__pyx_v_win32api = NULL;
+  CYTHON_UNUSED PyObject *__pyx_v_win32security = NULL;
+  PyObject *__pyx_v_info = NULL;
+  PyObject *__pyx_v_drive = NULL;
+  PyObject *__pyx_v_wmi = NULL;
+  PyObject *__pyx_v_c = NULL;
+  PyObject *__pyx_v_item = NULL;
   PyObject *__pyx_r = NULL;
   __Pyx_RefNannyDeclarations
   PyObject *__pyx_t_1 = NULL;
@@ -2563,24 +3378,26 @@ static PyObject *__pyx_pf_6docgen_5utils_14_machine_utils_get_machine_id(CYTHON_
   PyObject *__pyx_t_4 = NULL;
   PyObject *__pyx_t_5 = NULL;
   PyObject *__pyx_t_6 = NULL;
-  unsigned int __pyx_t_7;
+  PyObject *__pyx_t_7 = NULL;
   PyObject *__pyx_t_8 = NULL;
   PyObject *__pyx_t_9 = NULL;
-  PyObject *__pyx_t_10 = NULL;
-  PyObject *__pyx_t_11 = NULL;
-  PyObject *__pyx_t_12 = NULL;
-  PyObject *__pyx_t_13 = NULL;
+  unsigned int __pyx_t_10;
+  int __pyx_t_11;
+  Py_ssize_t __pyx_t_12;
+  PyObject *(*__pyx_t_13)(PyObject *);
+  int __pyx_t_14;
+  PyObject *__pyx_t_15 = NULL;
   int __pyx_lineno = 0;
   const char *__pyx_filename = NULL;
   int __pyx_clineno = 0;
-  __Pyx_RefNannySetupContext("get_machine_id", 1);
+  __Pyx_RefNannySetupContext("_get_windows_info", 1);
 
-  /* "docgen/utils/_machine_utils.pyx":12
- * def get_machine_id() -> str:
- *     """Generate a unique machine identifier with hardware info."""
+  /* "docgen/utils/_machine_utils.pyx":49
+ * cdef list _get_windows_info():
+ *     """Get stable Windows-specific identifiers."""
  *     try:             # <<<<<<<<<<<<<<
- *         system_info = [
- *             platform.node(),
+ *         import win32api
+ *         import win32security
  */
   {
     __Pyx_PyThreadState_declare
@@ -2591,498 +3408,435 @@ static PyObject *__pyx_pf_6docgen_5utils_14_machine_utils_get_machine_id(CYTHON_
     __Pyx_XGOTREF(__pyx_t_3);
     /*try:*/ {
 
-      /* "docgen/utils/_machine_utils.pyx":14
+      /* "docgen/utils/_machine_utils.pyx":50
+ *     """Get stable Windows-specific identifiers."""
  *     try:
- *         system_info = [
- *             platform.node(),             # <<<<<<<<<<<<<<
- *             platform.machine(),
- *             platform.processor(),
+ *         import win32api             # <<<<<<<<<<<<<<
+ *         import win32security
+ *         info = []
  */
-      __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_n_s_platform); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 14, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_5);
-      __pyx_t_6 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_node); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 14, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_6);
-      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      __pyx_t_5 = NULL;
-      __pyx_t_7 = 0;
-      #if CYTHON_UNPACK_METHODS
-      if (unlikely(PyMethod_Check(__pyx_t_6))) {
-        __pyx_t_5 = PyMethod_GET_SELF(__pyx_t_6);
-        if (likely(__pyx_t_5)) {
-          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_6);
-          __Pyx_INCREF(__pyx_t_5);
-          __Pyx_INCREF(function);
-          __Pyx_DECREF_SET(__pyx_t_6, function);
-          __pyx_t_7 = 1;
-        }
-      }
-      #endif
-      {
-        PyObject *__pyx_callargs[2] = {__pyx_t_5, NULL};
-        __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_6, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-        __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 14, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_4);
-        __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
-      }
-
-      /* "docgen/utils/_machine_utils.pyx":15
- *         system_info = [
- *             platform.node(),
- *             platform.machine(),             # <<<<<<<<<<<<<<
- *             platform.processor(),
- *             str(uuid.getnode()),
- */
-      __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_n_s_platform); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 15, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_5);
-      __pyx_t_8 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_machine); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 15, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_8);
-      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      __pyx_t_5 = NULL;
-      __pyx_t_7 = 0;
-      #if CYTHON_UNPACK_METHODS
-      if (unlikely(PyMethod_Check(__pyx_t_8))) {
-        __pyx_t_5 = PyMethod_GET_SELF(__pyx_t_8);
-        if (likely(__pyx_t_5)) {
-          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_8);
-          __Pyx_INCREF(__pyx_t_5);
-          __Pyx_INCREF(function);
-          __Pyx_DECREF_SET(__pyx_t_8, function);
-          __pyx_t_7 = 1;
-        }
-      }
-      #endif
-      {
-        PyObject *__pyx_callargs[2] = {__pyx_t_5, NULL};
-        __pyx_t_6 = __Pyx_PyObject_FastCall(__pyx_t_8, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-        __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-        if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 15, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_6);
-        __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
-      }
-
-      /* "docgen/utils/_machine_utils.pyx":16
- *             platform.node(),
- *             platform.machine(),
- *             platform.processor(),             # <<<<<<<<<<<<<<
- *             str(uuid.getnode()),
- *             platform.system(),
- */
-      __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_n_s_platform); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 16, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_5);
-      __pyx_t_9 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_processor); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 16, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_9);
-      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      __pyx_t_5 = NULL;
-      __pyx_t_7 = 0;
-      #if CYTHON_UNPACK_METHODS
-      if (unlikely(PyMethod_Check(__pyx_t_9))) {
-        __pyx_t_5 = PyMethod_GET_SELF(__pyx_t_9);
-        if (likely(__pyx_t_5)) {
-          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_9);
-          __Pyx_INCREF(__pyx_t_5);
-          __Pyx_INCREF(function);
-          __Pyx_DECREF_SET(__pyx_t_9, function);
-          __pyx_t_7 = 1;
-        }
-      }
-      #endif
-      {
-        PyObject *__pyx_callargs[2] = {__pyx_t_5, NULL};
-        __pyx_t_8 = __Pyx_PyObject_FastCall(__pyx_t_9, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-        __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-        if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 16, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_8);
-        __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
-      }
-
-      /* "docgen/utils/_machine_utils.pyx":17
- *             platform.machine(),
- *             platform.processor(),
- *             str(uuid.getnode()),             # <<<<<<<<<<<<<<
- *             platform.system(),
- *             platform.version(),
- */
-      __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_n_s_uuid); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 17, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_5);
-      __pyx_t_10 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_getnode); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 17, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_10);
-      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      __pyx_t_5 = NULL;
-      __pyx_t_7 = 0;
-      #if CYTHON_UNPACK_METHODS
-      if (unlikely(PyMethod_Check(__pyx_t_10))) {
-        __pyx_t_5 = PyMethod_GET_SELF(__pyx_t_10);
-        if (likely(__pyx_t_5)) {
-          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_10);
-          __Pyx_INCREF(__pyx_t_5);
-          __Pyx_INCREF(function);
-          __Pyx_DECREF_SET(__pyx_t_10, function);
-          __pyx_t_7 = 1;
-        }
-      }
-      #endif
-      {
-        PyObject *__pyx_callargs[2] = {__pyx_t_5, NULL};
-        __pyx_t_9 = __Pyx_PyObject_FastCall(__pyx_t_10, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-        __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-        if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 17, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_9);
-        __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
-      }
-      __pyx_t_10 = __Pyx_PyObject_Unicode(__pyx_t_9); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 17, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_10);
-      __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
-
-      /* "docgen/utils/_machine_utils.pyx":18
- *             platform.processor(),
- *             str(uuid.getnode()),
- *             platform.system(),             # <<<<<<<<<<<<<<
- *             platform.version(),
- *             _get_disk_id(),
- */
-      __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_n_s_platform); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 18, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_5);
-      __pyx_t_11 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_system); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 18, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_11);
-      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      __pyx_t_5 = NULL;
-      __pyx_t_7 = 0;
-      #if CYTHON_UNPACK_METHODS
-      if (unlikely(PyMethod_Check(__pyx_t_11))) {
-        __pyx_t_5 = PyMethod_GET_SELF(__pyx_t_11);
-        if (likely(__pyx_t_5)) {
-          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_11);
-          __Pyx_INCREF(__pyx_t_5);
-          __Pyx_INCREF(function);
-          __Pyx_DECREF_SET(__pyx_t_11, function);
-          __pyx_t_7 = 1;
-        }
-      }
-      #endif
-      {
-        PyObject *__pyx_callargs[2] = {__pyx_t_5, NULL};
-        __pyx_t_9 = __Pyx_PyObject_FastCall(__pyx_t_11, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-        __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-        if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 18, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_9);
-        __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
-      }
-
-      /* "docgen/utils/_machine_utils.pyx":19
- *             str(uuid.getnode()),
- *             platform.system(),
- *             platform.version(),             # <<<<<<<<<<<<<<
- *             _get_disk_id(),
- *             _get_cpu_info()
- */
-      __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_n_s_platform); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 19, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_5);
-      __pyx_t_12 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_version); if (unlikely(!__pyx_t_12)) __PYX_ERR(0, 19, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_12);
-      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      __pyx_t_5 = NULL;
-      __pyx_t_7 = 0;
-      #if CYTHON_UNPACK_METHODS
-      if (unlikely(PyMethod_Check(__pyx_t_12))) {
-        __pyx_t_5 = PyMethod_GET_SELF(__pyx_t_12);
-        if (likely(__pyx_t_5)) {
-          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_12);
-          __Pyx_INCREF(__pyx_t_5);
-          __Pyx_INCREF(function);
-          __Pyx_DECREF_SET(__pyx_t_12, function);
-          __pyx_t_7 = 1;
-        }
-      }
-      #endif
-      {
-        PyObject *__pyx_callargs[2] = {__pyx_t_5, NULL};
-        __pyx_t_11 = __Pyx_PyObject_FastCall(__pyx_t_12, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-        __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-        if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 19, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_11);
-        __Pyx_DECREF(__pyx_t_12); __pyx_t_12 = 0;
-      }
-
-      /* "docgen/utils/_machine_utils.pyx":20
- *             platform.system(),
- *             platform.version(),
- *             _get_disk_id(),             # <<<<<<<<<<<<<<
- *             _get_cpu_info()
- *         ]
- */
-      __pyx_t_12 = __pyx_f_6docgen_5utils_14_machine_utils__get_disk_id(); if (unlikely(!__pyx_t_12)) __PYX_ERR(0, 20, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_12);
-
-      /* "docgen/utils/_machine_utils.pyx":21
- *             platform.version(),
- *             _get_disk_id(),
- *             _get_cpu_info()             # <<<<<<<<<<<<<<
- *         ]
- * 
- */
-      __pyx_t_5 = __pyx_f_6docgen_5utils_14_machine_utils__get_cpu_info(); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 21, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_5);
-
-      /* "docgen/utils/_machine_utils.pyx":13
- *     """Generate a unique machine identifier with hardware info."""
- *     try:
- *         system_info = [             # <<<<<<<<<<<<<<
- *             platform.node(),
- *             platform.machine(),
- */
-      __pyx_t_13 = PyList_New(8); if (unlikely(!__pyx_t_13)) __PYX_ERR(0, 13, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_13);
-      __Pyx_GIVEREF(__pyx_t_4);
-      if (__Pyx_PyList_SET_ITEM(__pyx_t_13, 0, __pyx_t_4)) __PYX_ERR(0, 13, __pyx_L3_error);
-      __Pyx_GIVEREF(__pyx_t_6);
-      if (__Pyx_PyList_SET_ITEM(__pyx_t_13, 1, __pyx_t_6)) __PYX_ERR(0, 13, __pyx_L3_error);
-      __Pyx_GIVEREF(__pyx_t_8);
-      if (__Pyx_PyList_SET_ITEM(__pyx_t_13, 2, __pyx_t_8)) __PYX_ERR(0, 13, __pyx_L3_error);
-      __Pyx_GIVEREF(__pyx_t_10);
-      if (__Pyx_PyList_SET_ITEM(__pyx_t_13, 3, __pyx_t_10)) __PYX_ERR(0, 13, __pyx_L3_error);
-      __Pyx_GIVEREF(__pyx_t_9);
-      if (__Pyx_PyList_SET_ITEM(__pyx_t_13, 4, __pyx_t_9)) __PYX_ERR(0, 13, __pyx_L3_error);
-      __Pyx_GIVEREF(__pyx_t_11);
-      if (__Pyx_PyList_SET_ITEM(__pyx_t_13, 5, __pyx_t_11)) __PYX_ERR(0, 13, __pyx_L3_error);
-      __Pyx_GIVEREF(__pyx_t_12);
-      if (__Pyx_PyList_SET_ITEM(__pyx_t_13, 6, __pyx_t_12)) __PYX_ERR(0, 13, __pyx_L3_error);
-      __Pyx_GIVEREF(__pyx_t_5);
-      if (__Pyx_PyList_SET_ITEM(__pyx_t_13, 7, __pyx_t_5)) __PYX_ERR(0, 13, __pyx_L3_error);
+      __pyx_t_4 = __Pyx_ImportDottedModule(__pyx_n_s_win32api, NULL); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 50, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_4);
+      __pyx_v_win32api = __pyx_t_4;
       __pyx_t_4 = 0;
-      __pyx_t_6 = 0;
-      __pyx_t_8 = 0;
-      __pyx_t_10 = 0;
-      __pyx_t_9 = 0;
-      __pyx_t_11 = 0;
-      __pyx_t_12 = 0;
-      __pyx_t_5 = 0;
-      __pyx_v_system_info = ((PyObject*)__pyx_t_13);
-      __pyx_t_13 = 0;
 
-      /* "docgen/utils/_machine_utils.pyx":24
- *         ]
+      /* "docgen/utils/_machine_utils.pyx":51
+ *     try:
+ *         import win32api
+ *         import win32security             # <<<<<<<<<<<<<<
+ *         info = []
  * 
- *         machine_id = hashlib.sha256(''.join(system_info).encode()).hexdigest()             # <<<<<<<<<<<<<<
- *         return machine_id
- *     except:
  */
-      __Pyx_GetModuleGlobalName(__pyx_t_12, __pyx_n_s_hashlib); if (unlikely(!__pyx_t_12)) __PYX_ERR(0, 24, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_12);
-      __pyx_t_11 = __Pyx_PyObject_GetAttrStr(__pyx_t_12, __pyx_n_s_sha256); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 24, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_11);
-      __Pyx_DECREF(__pyx_t_12); __pyx_t_12 = 0;
-      __pyx_t_12 = PyUnicode_Join(__pyx_kp_u_, __pyx_v_system_info); if (unlikely(!__pyx_t_12)) __PYX_ERR(0, 24, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_12);
-      __pyx_t_9 = PyUnicode_AsEncodedString(((PyObject*)__pyx_t_12), NULL, NULL); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 24, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_9);
-      __Pyx_DECREF(__pyx_t_12); __pyx_t_12 = 0;
-      __pyx_t_12 = NULL;
-      __pyx_t_7 = 0;
-      #if CYTHON_UNPACK_METHODS
-      if (unlikely(PyMethod_Check(__pyx_t_11))) {
-        __pyx_t_12 = PyMethod_GET_SELF(__pyx_t_11);
-        if (likely(__pyx_t_12)) {
-          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_11);
-          __Pyx_INCREF(__pyx_t_12);
-          __Pyx_INCREF(function);
-          __Pyx_DECREF_SET(__pyx_t_11, function);
-          __pyx_t_7 = 1;
-        }
-      }
-      #endif
-      {
-        PyObject *__pyx_callargs[2] = {__pyx_t_12, __pyx_t_9};
-        __pyx_t_5 = __Pyx_PyObject_FastCall(__pyx_t_11, __pyx_callargs+1-__pyx_t_7, 1+__pyx_t_7);
-        __Pyx_XDECREF(__pyx_t_12); __pyx_t_12 = 0;
-        __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
-        if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 24, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_5);
-        __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
-      }
-      __pyx_t_11 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_hexdigest); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 24, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_11);
-      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      __pyx_t_5 = NULL;
-      __pyx_t_7 = 0;
-      #if CYTHON_UNPACK_METHODS
-      if (likely(PyMethod_Check(__pyx_t_11))) {
-        __pyx_t_5 = PyMethod_GET_SELF(__pyx_t_11);
-        if (likely(__pyx_t_5)) {
-          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_11);
-          __Pyx_INCREF(__pyx_t_5);
-          __Pyx_INCREF(function);
-          __Pyx_DECREF_SET(__pyx_t_11, function);
-          __pyx_t_7 = 1;
-        }
-      }
-      #endif
-      {
-        PyObject *__pyx_callargs[2] = {__pyx_t_5, NULL};
-        __pyx_t_13 = __Pyx_PyObject_FastCall(__pyx_t_11, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-        __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-        if (unlikely(!__pyx_t_13)) __PYX_ERR(0, 24, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_13);
-        __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
-      }
-      __pyx_v_machine_id = __pyx_t_13;
-      __pyx_t_13 = 0;
+      __pyx_t_4 = __Pyx_ImportDottedModule(__pyx_n_s_win32security, NULL); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 51, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_4);
+      __pyx_v_win32security = __pyx_t_4;
+      __pyx_t_4 = 0;
 
-      /* "docgen/utils/_machine_utils.pyx":25
+      /* "docgen/utils/_machine_utils.pyx":52
+ *         import win32api
+ *         import win32security
+ *         info = []             # <<<<<<<<<<<<<<
  * 
- *         machine_id = hashlib.sha256(''.join(system_info).encode()).hexdigest()
- *         return machine_id             # <<<<<<<<<<<<<<
+ *         # System drive serial number
+ */
+      __pyx_t_4 = PyList_New(0); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 52, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_4);
+      __pyx_v_info = ((PyObject*)__pyx_t_4);
+      __pyx_t_4 = 0;
+
+      /* "docgen/utils/_machine_utils.pyx":55
+ * 
+ *         # System drive serial number
+ *         try:             # <<<<<<<<<<<<<<
+ *             drive = win32api.GetVolumeInformation('C:\\')[1]
+ *             info.append(str(drive))
+ */
+      {
+        __Pyx_PyThreadState_declare
+        __Pyx_PyThreadState_assign
+        __Pyx_ExceptionSave(&__pyx_t_5, &__pyx_t_6, &__pyx_t_7);
+        __Pyx_XGOTREF(__pyx_t_5);
+        __Pyx_XGOTREF(__pyx_t_6);
+        __Pyx_XGOTREF(__pyx_t_7);
+        /*try:*/ {
+
+          /* "docgen/utils/_machine_utils.pyx":56
+ *         # System drive serial number
+ *         try:
+ *             drive = win32api.GetVolumeInformation('C:\\')[1]             # <<<<<<<<<<<<<<
+ *             info.append(str(drive))
+ *         except:
+ */
+          __pyx_t_8 = __Pyx_PyObject_GetAttrStr(__pyx_v_win32api, __pyx_n_s_GetVolumeInformation); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 56, __pyx_L9_error)
+          __Pyx_GOTREF(__pyx_t_8);
+          __pyx_t_9 = NULL;
+          __pyx_t_10 = 0;
+          #if CYTHON_UNPACK_METHODS
+          if (likely(PyMethod_Check(__pyx_t_8))) {
+            __pyx_t_9 = PyMethod_GET_SELF(__pyx_t_8);
+            if (likely(__pyx_t_9)) {
+              PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_8);
+              __Pyx_INCREF(__pyx_t_9);
+              __Pyx_INCREF(function);
+              __Pyx_DECREF_SET(__pyx_t_8, function);
+              __pyx_t_10 = 1;
+            }
+          }
+          #endif
+          {
+            PyObject *__pyx_callargs[2] = {__pyx_t_9, __pyx_kp_u_C};
+            __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_8, __pyx_callargs+1-__pyx_t_10, 1+__pyx_t_10);
+            __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
+            if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 56, __pyx_L9_error)
+            __Pyx_GOTREF(__pyx_t_4);
+            __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+          }
+          __pyx_t_8 = __Pyx_GetItemInt(__pyx_t_4, 1, long, 1, __Pyx_PyInt_From_long, 0, 0, 1); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 56, __pyx_L9_error)
+          __Pyx_GOTREF(__pyx_t_8);
+          __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+          __pyx_v_drive = __pyx_t_8;
+          __pyx_t_8 = 0;
+
+          /* "docgen/utils/_machine_utils.pyx":57
+ *         try:
+ *             drive = win32api.GetVolumeInformation('C:\\')[1]
+ *             info.append(str(drive))             # <<<<<<<<<<<<<<
+ *         except:
+ *             pass
+ */
+          __pyx_t_8 = __Pyx_PyObject_Unicode(__pyx_v_drive); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 57, __pyx_L9_error)
+          __Pyx_GOTREF(__pyx_t_8);
+          __pyx_t_11 = __Pyx_PyList_Append(__pyx_v_info, __pyx_t_8); if (unlikely(__pyx_t_11 == ((int)-1))) __PYX_ERR(0, 57, __pyx_L9_error)
+          __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+
+          /* "docgen/utils/_machine_utils.pyx":55
+ * 
+ *         # System drive serial number
+ *         try:             # <<<<<<<<<<<<<<
+ *             drive = win32api.GetVolumeInformation('C:\\')[1]
+ *             info.append(str(drive))
+ */
+        }
+        __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
+        __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+        __Pyx_XDECREF(__pyx_t_7); __pyx_t_7 = 0;
+        goto __pyx_L14_try_end;
+        __pyx_L9_error:;
+        __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
+        __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
+        __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
+
+        /* "docgen/utils/_machine_utils.pyx":58
+ *             drive = win32api.GetVolumeInformation('C:\\')[1]
+ *             info.append(str(drive))
+ *         except:             # <<<<<<<<<<<<<<
+ *             pass
+ * 
+ */
+        /*except:*/ {
+          __Pyx_ErrRestore(0,0,0);
+          goto __pyx_L10_exception_handled;
+        }
+        __pyx_L10_exception_handled:;
+        __Pyx_XGIVEREF(__pyx_t_5);
+        __Pyx_XGIVEREF(__pyx_t_6);
+        __Pyx_XGIVEREF(__pyx_t_7);
+        __Pyx_ExceptionReset(__pyx_t_5, __pyx_t_6, __pyx_t_7);
+        __pyx_L14_try_end:;
+      }
+
+      /* "docgen/utils/_machine_utils.pyx":62
+ * 
+ *         # BIOS Serial
+ *         try:             # <<<<<<<<<<<<<<
+ *             import wmi
+ *             c = wmi.WMI()
+ */
+      {
+        __Pyx_PyThreadState_declare
+        __Pyx_PyThreadState_assign
+        __Pyx_ExceptionSave(&__pyx_t_7, &__pyx_t_6, &__pyx_t_5);
+        __Pyx_XGOTREF(__pyx_t_7);
+        __Pyx_XGOTREF(__pyx_t_6);
+        __Pyx_XGOTREF(__pyx_t_5);
+        /*try:*/ {
+
+          /* "docgen/utils/_machine_utils.pyx":63
+ *         # BIOS Serial
+ *         try:
+ *             import wmi             # <<<<<<<<<<<<<<
+ *             c = wmi.WMI()
+ *             for item in c.Win32_BIOS():
+ */
+          __pyx_t_8 = __Pyx_ImportDottedModule(__pyx_n_s_wmi, NULL); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 63, __pyx_L15_error)
+          __Pyx_GOTREF(__pyx_t_8);
+          __pyx_v_wmi = __pyx_t_8;
+          __pyx_t_8 = 0;
+
+          /* "docgen/utils/_machine_utils.pyx":64
+ *         try:
+ *             import wmi
+ *             c = wmi.WMI()             # <<<<<<<<<<<<<<
+ *             for item in c.Win32_BIOS():
+ *                 if item.SerialNumber:
+ */
+          __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_wmi, __pyx_n_s_WMI); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 64, __pyx_L15_error)
+          __Pyx_GOTREF(__pyx_t_4);
+          __pyx_t_9 = NULL;
+          __pyx_t_10 = 0;
+          #if CYTHON_UNPACK_METHODS
+          if (likely(PyMethod_Check(__pyx_t_4))) {
+            __pyx_t_9 = PyMethod_GET_SELF(__pyx_t_4);
+            if (likely(__pyx_t_9)) {
+              PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_4);
+              __Pyx_INCREF(__pyx_t_9);
+              __Pyx_INCREF(function);
+              __Pyx_DECREF_SET(__pyx_t_4, function);
+              __pyx_t_10 = 1;
+            }
+          }
+          #endif
+          {
+            PyObject *__pyx_callargs[2] = {__pyx_t_9, NULL};
+            __pyx_t_8 = __Pyx_PyObject_FastCall(__pyx_t_4, __pyx_callargs+1-__pyx_t_10, 0+__pyx_t_10);
+            __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
+            if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 64, __pyx_L15_error)
+            __Pyx_GOTREF(__pyx_t_8);
+            __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+          }
+          __pyx_v_c = __pyx_t_8;
+          __pyx_t_8 = 0;
+
+          /* "docgen/utils/_machine_utils.pyx":65
+ *             import wmi
+ *             c = wmi.WMI()
+ *             for item in c.Win32_BIOS():             # <<<<<<<<<<<<<<
+ *                 if item.SerialNumber:
+ *                     info.append(item.SerialNumber)
+ */
+          __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_c, __pyx_n_s_Win32_BIOS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 65, __pyx_L15_error)
+          __Pyx_GOTREF(__pyx_t_4);
+          __pyx_t_9 = NULL;
+          __pyx_t_10 = 0;
+          #if CYTHON_UNPACK_METHODS
+          if (likely(PyMethod_Check(__pyx_t_4))) {
+            __pyx_t_9 = PyMethod_GET_SELF(__pyx_t_4);
+            if (likely(__pyx_t_9)) {
+              PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_4);
+              __Pyx_INCREF(__pyx_t_9);
+              __Pyx_INCREF(function);
+              __Pyx_DECREF_SET(__pyx_t_4, function);
+              __pyx_t_10 = 1;
+            }
+          }
+          #endif
+          {
+            PyObject *__pyx_callargs[2] = {__pyx_t_9, NULL};
+            __pyx_t_8 = __Pyx_PyObject_FastCall(__pyx_t_4, __pyx_callargs+1-__pyx_t_10, 0+__pyx_t_10);
+            __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
+            if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 65, __pyx_L15_error)
+            __Pyx_GOTREF(__pyx_t_8);
+            __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+          }
+          if (likely(PyList_CheckExact(__pyx_t_8)) || PyTuple_CheckExact(__pyx_t_8)) {
+            __pyx_t_4 = __pyx_t_8; __Pyx_INCREF(__pyx_t_4);
+            __pyx_t_12 = 0;
+            __pyx_t_13 = NULL;
+          } else {
+            __pyx_t_12 = -1; __pyx_t_4 = PyObject_GetIter(__pyx_t_8); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 65, __pyx_L15_error)
+            __Pyx_GOTREF(__pyx_t_4);
+            __pyx_t_13 = __Pyx_PyObject_GetIterNextFunc(__pyx_t_4); if (unlikely(!__pyx_t_13)) __PYX_ERR(0, 65, __pyx_L15_error)
+          }
+          __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+          for (;;) {
+            if (likely(!__pyx_t_13)) {
+              if (likely(PyList_CheckExact(__pyx_t_4))) {
+                {
+                  Py_ssize_t __pyx_temp = __Pyx_PyList_GET_SIZE(__pyx_t_4);
+                  #if !CYTHON_ASSUME_SAFE_MACROS
+                  if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 65, __pyx_L15_error)
+                  #endif
+                  if (__pyx_t_12 >= __pyx_temp) break;
+                }
+                #if CYTHON_ASSUME_SAFE_MACROS && !CYTHON_AVOID_BORROWED_REFS
+                __pyx_t_8 = PyList_GET_ITEM(__pyx_t_4, __pyx_t_12); __Pyx_INCREF(__pyx_t_8); __pyx_t_12++; if (unlikely((0 < 0))) __PYX_ERR(0, 65, __pyx_L15_error)
+                #else
+                __pyx_t_8 = __Pyx_PySequence_ITEM(__pyx_t_4, __pyx_t_12); __pyx_t_12++; if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 65, __pyx_L15_error)
+                __Pyx_GOTREF(__pyx_t_8);
+                #endif
+              } else {
+                {
+                  Py_ssize_t __pyx_temp = __Pyx_PyTuple_GET_SIZE(__pyx_t_4);
+                  #if !CYTHON_ASSUME_SAFE_MACROS
+                  if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 65, __pyx_L15_error)
+                  #endif
+                  if (__pyx_t_12 >= __pyx_temp) break;
+                }
+                #if CYTHON_ASSUME_SAFE_MACROS && !CYTHON_AVOID_BORROWED_REFS
+                __pyx_t_8 = PyTuple_GET_ITEM(__pyx_t_4, __pyx_t_12); __Pyx_INCREF(__pyx_t_8); __pyx_t_12++; if (unlikely((0 < 0))) __PYX_ERR(0, 65, __pyx_L15_error)
+                #else
+                __pyx_t_8 = __Pyx_PySequence_ITEM(__pyx_t_4, __pyx_t_12); __pyx_t_12++; if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 65, __pyx_L15_error)
+                __Pyx_GOTREF(__pyx_t_8);
+                #endif
+              }
+            } else {
+              __pyx_t_8 = __pyx_t_13(__pyx_t_4);
+              if (unlikely(!__pyx_t_8)) {
+                PyObject* exc_type = PyErr_Occurred();
+                if (exc_type) {
+                  if (likely(__Pyx_PyErr_GivenExceptionMatches(exc_type, PyExc_StopIteration))) PyErr_Clear();
+                  else __PYX_ERR(0, 65, __pyx_L15_error)
+                }
+                break;
+              }
+              __Pyx_GOTREF(__pyx_t_8);
+            }
+            __Pyx_XDECREF_SET(__pyx_v_item, __pyx_t_8);
+            __pyx_t_8 = 0;
+
+            /* "docgen/utils/_machine_utils.pyx":66
+ *             c = wmi.WMI()
+ *             for item in c.Win32_BIOS():
+ *                 if item.SerialNumber:             # <<<<<<<<<<<<<<
+ *                     info.append(item.SerialNumber)
+ *         except:
+ */
+            __pyx_t_8 = __Pyx_PyObject_GetAttrStr(__pyx_v_item, __pyx_n_s_SerialNumber); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 66, __pyx_L15_error)
+            __Pyx_GOTREF(__pyx_t_8);
+            __pyx_t_14 = __Pyx_PyObject_IsTrue(__pyx_t_8); if (unlikely((__pyx_t_14 < 0))) __PYX_ERR(0, 66, __pyx_L15_error)
+            __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+            if (__pyx_t_14) {
+
+              /* "docgen/utils/_machine_utils.pyx":67
+ *             for item in c.Win32_BIOS():
+ *                 if item.SerialNumber:
+ *                     info.append(item.SerialNumber)             # <<<<<<<<<<<<<<
+ *         except:
+ *             pass
+ */
+              __pyx_t_8 = __Pyx_PyObject_GetAttrStr(__pyx_v_item, __pyx_n_s_SerialNumber); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 67, __pyx_L15_error)
+              __Pyx_GOTREF(__pyx_t_8);
+              __pyx_t_11 = __Pyx_PyList_Append(__pyx_v_info, __pyx_t_8); if (unlikely(__pyx_t_11 == ((int)-1))) __PYX_ERR(0, 67, __pyx_L15_error)
+              __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+
+              /* "docgen/utils/_machine_utils.pyx":66
+ *             c = wmi.WMI()
+ *             for item in c.Win32_BIOS():
+ *                 if item.SerialNumber:             # <<<<<<<<<<<<<<
+ *                     info.append(item.SerialNumber)
+ *         except:
+ */
+            }
+
+            /* "docgen/utils/_machine_utils.pyx":65
+ *             import wmi
+ *             c = wmi.WMI()
+ *             for item in c.Win32_BIOS():             # <<<<<<<<<<<<<<
+ *                 if item.SerialNumber:
+ *                     info.append(item.SerialNumber)
+ */
+          }
+          __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+
+          /* "docgen/utils/_machine_utils.pyx":62
+ * 
+ *         # BIOS Serial
+ *         try:             # <<<<<<<<<<<<<<
+ *             import wmi
+ *             c = wmi.WMI()
+ */
+        }
+        __Pyx_XDECREF(__pyx_t_7); __pyx_t_7 = 0;
+        __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+        __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
+        goto __pyx_L20_try_end;
+        __pyx_L15_error:;
+        __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
+        __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
+        __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
+
+        /* "docgen/utils/_machine_utils.pyx":68
+ *                 if item.SerialNumber:
+ *                     info.append(item.SerialNumber)
+ *         except:             # <<<<<<<<<<<<<<
+ *             pass
+ * 
+ */
+        /*except:*/ {
+          __Pyx_ErrRestore(0,0,0);
+          goto __pyx_L16_exception_handled;
+        }
+        __pyx_L16_exception_handled:;
+        __Pyx_XGIVEREF(__pyx_t_7);
+        __Pyx_XGIVEREF(__pyx_t_6);
+        __Pyx_XGIVEREF(__pyx_t_5);
+        __Pyx_ExceptionReset(__pyx_t_7, __pyx_t_6, __pyx_t_5);
+        __pyx_L20_try_end:;
+      }
+
+      /* "docgen/utils/_machine_utils.pyx":71
+ *             pass
+ * 
+ *         return info             # <<<<<<<<<<<<<<
  *     except:
- *         return hashlib.sha256(str(uuid.getnode()).encode()).hexdigest()
+ *         return []
  */
       __Pyx_XDECREF(__pyx_r);
-      if (!(likely(PyUnicode_CheckExact(__pyx_v_machine_id))||((__pyx_v_machine_id) == Py_None) || __Pyx_RaiseUnexpectedTypeError("unicode", __pyx_v_machine_id))) __PYX_ERR(0, 25, __pyx_L3_error)
-      __Pyx_INCREF(__pyx_v_machine_id);
-      __pyx_r = ((PyObject*)__pyx_v_machine_id);
+      __Pyx_INCREF(__pyx_v_info);
+      __pyx_r = __pyx_v_info;
       goto __pyx_L7_try_return;
 
-      /* "docgen/utils/_machine_utils.pyx":12
- * def get_machine_id() -> str:
- *     """Generate a unique machine identifier with hardware info."""
+      /* "docgen/utils/_machine_utils.pyx":49
+ * cdef list _get_windows_info():
+ *     """Get stable Windows-specific identifiers."""
  *     try:             # <<<<<<<<<<<<<<
- *         system_info = [
- *             platform.node(),
+ *         import win32api
+ *         import win32security
  */
     }
     __pyx_L3_error:;
-    __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
-    __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
-    __Pyx_XDECREF(__pyx_t_12); __pyx_t_12 = 0;
-    __Pyx_XDECREF(__pyx_t_13); __pyx_t_13 = 0;
     __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-    __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-    __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
     __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
     __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
 
-    /* "docgen/utils/_machine_utils.pyx":26
- *         machine_id = hashlib.sha256(''.join(system_info).encode()).hexdigest()
- *         return machine_id
+    /* "docgen/utils/_machine_utils.pyx":72
+ * 
+ *         return info
  *     except:             # <<<<<<<<<<<<<<
- *         return hashlib.sha256(str(uuid.getnode()).encode()).hexdigest()
+ *         return []
  * 
  */
     /*except:*/ {
-      __Pyx_AddTraceback("docgen.utils._machine_utils.get_machine_id", __pyx_clineno, __pyx_lineno, __pyx_filename);
-      if (__Pyx_GetException(&__pyx_t_13, &__pyx_t_11, &__pyx_t_5) < 0) __PYX_ERR(0, 26, __pyx_L5_except_error)
-      __Pyx_XGOTREF(__pyx_t_13);
-      __Pyx_XGOTREF(__pyx_t_11);
-      __Pyx_XGOTREF(__pyx_t_5);
+      __Pyx_AddTraceback("docgen.utils._machine_utils._get_windows_info", __pyx_clineno, __pyx_lineno, __pyx_filename);
+      if (__Pyx_GetException(&__pyx_t_4, &__pyx_t_8, &__pyx_t_9) < 0) __PYX_ERR(0, 72, __pyx_L5_except_error)
+      __Pyx_XGOTREF(__pyx_t_4);
+      __Pyx_XGOTREF(__pyx_t_8);
+      __Pyx_XGOTREF(__pyx_t_9);
 
-      /* "docgen/utils/_machine_utils.pyx":27
- *         return machine_id
+      /* "docgen/utils/_machine_utils.pyx":73
+ *         return info
  *     except:
- *         return hashlib.sha256(str(uuid.getnode()).encode()).hexdigest()             # <<<<<<<<<<<<<<
+ *         return []             # <<<<<<<<<<<<<<
  * 
- * cdef str _get_disk_id():
+ * cdef list _get_macos_info():
  */
       __Pyx_XDECREF(__pyx_r);
-      __Pyx_GetModuleGlobalName(__pyx_t_10, __pyx_n_s_hashlib); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 27, __pyx_L5_except_error)
-      __Pyx_GOTREF(__pyx_t_10);
-      __pyx_t_8 = __Pyx_PyObject_GetAttrStr(__pyx_t_10, __pyx_n_s_sha256); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 27, __pyx_L5_except_error)
-      __Pyx_GOTREF(__pyx_t_8);
-      __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
-      __Pyx_GetModuleGlobalName(__pyx_t_6, __pyx_n_s_uuid); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 27, __pyx_L5_except_error)
-      __Pyx_GOTREF(__pyx_t_6);
-      __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_t_6, __pyx_n_s_getnode); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 27, __pyx_L5_except_error)
-      __Pyx_GOTREF(__pyx_t_4);
-      __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
-      __pyx_t_6 = NULL;
-      __pyx_t_7 = 0;
-      #if CYTHON_UNPACK_METHODS
-      if (unlikely(PyMethod_Check(__pyx_t_4))) {
-        __pyx_t_6 = PyMethod_GET_SELF(__pyx_t_4);
-        if (likely(__pyx_t_6)) {
-          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_4);
-          __Pyx_INCREF(__pyx_t_6);
-          __Pyx_INCREF(function);
-          __Pyx_DECREF_SET(__pyx_t_4, function);
-          __pyx_t_7 = 1;
-        }
-      }
-      #endif
-      {
-        PyObject *__pyx_callargs[2] = {__pyx_t_6, NULL};
-        __pyx_t_10 = __Pyx_PyObject_FastCall(__pyx_t_4, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-        __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
-        if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 27, __pyx_L5_except_error)
-        __Pyx_GOTREF(__pyx_t_10);
-        __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-      }
-      __pyx_t_4 = __Pyx_PyObject_Unicode(__pyx_t_10); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 27, __pyx_L5_except_error)
-      __Pyx_GOTREF(__pyx_t_4);
-      __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
-      __pyx_t_10 = PyUnicode_AsEncodedString(((PyObject*)__pyx_t_4), NULL, NULL); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 27, __pyx_L5_except_error)
-      __Pyx_GOTREF(__pyx_t_10);
+      __pyx_t_15 = PyList_New(0); if (unlikely(!__pyx_t_15)) __PYX_ERR(0, 73, __pyx_L5_except_error)
+      __Pyx_GOTREF(__pyx_t_15);
+      __pyx_r = ((PyObject*)__pyx_t_15);
+      __pyx_t_15 = 0;
       __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-      __pyx_t_4 = NULL;
-      __pyx_t_7 = 0;
-      #if CYTHON_UNPACK_METHODS
-      if (unlikely(PyMethod_Check(__pyx_t_8))) {
-        __pyx_t_4 = PyMethod_GET_SELF(__pyx_t_8);
-        if (likely(__pyx_t_4)) {
-          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_8);
-          __Pyx_INCREF(__pyx_t_4);
-          __Pyx_INCREF(function);
-          __Pyx_DECREF_SET(__pyx_t_8, function);
-          __pyx_t_7 = 1;
-        }
-      }
-      #endif
-      {
-        PyObject *__pyx_callargs[2] = {__pyx_t_4, __pyx_t_10};
-        __pyx_t_12 = __Pyx_PyObject_FastCall(__pyx_t_8, __pyx_callargs+1-__pyx_t_7, 1+__pyx_t_7);
-        __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-        __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
-        if (unlikely(!__pyx_t_12)) __PYX_ERR(0, 27, __pyx_L5_except_error)
-        __Pyx_GOTREF(__pyx_t_12);
-        __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
-      }
-      __pyx_t_8 = __Pyx_PyObject_GetAttrStr(__pyx_t_12, __pyx_n_s_hexdigest); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 27, __pyx_L5_except_error)
-      __Pyx_GOTREF(__pyx_t_8);
-      __Pyx_DECREF(__pyx_t_12); __pyx_t_12 = 0;
-      __pyx_t_12 = NULL;
-      __pyx_t_7 = 0;
-      #if CYTHON_UNPACK_METHODS
-      if (likely(PyMethod_Check(__pyx_t_8))) {
-        __pyx_t_12 = PyMethod_GET_SELF(__pyx_t_8);
-        if (likely(__pyx_t_12)) {
-          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_8);
-          __Pyx_INCREF(__pyx_t_12);
-          __Pyx_INCREF(function);
-          __Pyx_DECREF_SET(__pyx_t_8, function);
-          __pyx_t_7 = 1;
-        }
-      }
-      #endif
-      {
-        PyObject *__pyx_callargs[2] = {__pyx_t_12, NULL};
-        __pyx_t_9 = __Pyx_PyObject_FastCall(__pyx_t_8, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-        __Pyx_XDECREF(__pyx_t_12); __pyx_t_12 = 0;
-        if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 27, __pyx_L5_except_error)
-        __Pyx_GOTREF(__pyx_t_9);
-        __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
-      }
-      if (!(likely(PyUnicode_CheckExact(__pyx_t_9))||((__pyx_t_9) == Py_None) || __Pyx_RaiseUnexpectedTypeError("unicode", __pyx_t_9))) __PYX_ERR(0, 27, __pyx_L5_except_error)
-      __pyx_r = ((PyObject*)__pyx_t_9);
-      __pyx_t_9 = 0;
-      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
-      __Pyx_DECREF(__pyx_t_13); __pyx_t_13 = 0;
+      __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+      __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
       goto __pyx_L6_except_return;
     }
 
-    /* "docgen/utils/_machine_utils.pyx":12
- * def get_machine_id() -> str:
- *     """Generate a unique machine identifier with hardware info."""
+    /* "docgen/utils/_machine_utils.pyx":49
+ * cdef list _get_windows_info():
+ *     """Get stable Windows-specific identifiers."""
  *     try:             # <<<<<<<<<<<<<<
- *         system_info = [
- *             platform.node(),
+ *         import win32api
+ *         import win32security
  */
     __pyx_L5_except_error:;
     __Pyx_XGIVEREF(__pyx_t_1);
@@ -3104,46 +3858,1516 @@ static PyObject *__pyx_pf_6docgen_5utils_14_machine_utils_get_machine_id(CYTHON_
     goto __pyx_L0;
   }
 
-  /* "docgen/utils/_machine_utils.pyx":9
- * cimport cython
+  /* "docgen/utils/_machine_utils.pyx":47
+ *     return info
  * 
- * @cython.binding(True)             # <<<<<<<<<<<<<<
- * def get_machine_id() -> str:
- *     """Generate a unique machine identifier with hardware info."""
+ * cdef list _get_windows_info():             # <<<<<<<<<<<<<<
+ *     """Get stable Windows-specific identifiers."""
+ *     try:
  */
 
   /* function exit code */
   __pyx_L1_error:;
   __Pyx_XDECREF(__pyx_t_4);
-  __Pyx_XDECREF(__pyx_t_5);
-  __Pyx_XDECREF(__pyx_t_6);
   __Pyx_XDECREF(__pyx_t_8);
   __Pyx_XDECREF(__pyx_t_9);
-  __Pyx_XDECREF(__pyx_t_10);
-  __Pyx_XDECREF(__pyx_t_11);
-  __Pyx_XDECREF(__pyx_t_12);
-  __Pyx_XDECREF(__pyx_t_13);
-  __Pyx_AddTraceback("docgen.utils._machine_utils.get_machine_id", __pyx_clineno, __pyx_lineno, __pyx_filename);
-  __pyx_r = NULL;
+  __Pyx_XDECREF(__pyx_t_15);
+  __Pyx_AddTraceback("docgen.utils._machine_utils._get_windows_info", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __pyx_r = 0;
   __pyx_L0:;
-  __Pyx_XDECREF(__pyx_v_system_info);
-  __Pyx_XDECREF(__pyx_v_machine_id);
+  __Pyx_XDECREF(__pyx_v_win32api);
+  __Pyx_XDECREF(__pyx_v_win32security);
+  __Pyx_XDECREF(__pyx_v_info);
+  __Pyx_XDECREF(__pyx_v_drive);
+  __Pyx_XDECREF(__pyx_v_wmi);
+  __Pyx_XDECREF(__pyx_v_c);
+  __Pyx_XDECREF(__pyx_v_item);
   __Pyx_XGIVEREF(__pyx_r);
   __Pyx_RefNannyFinishContext();
   return __pyx_r;
 }
 
-/* "docgen/utils/_machine_utils.pyx":29
- *         return hashlib.sha256(str(uuid.getnode()).encode()).hexdigest()
+/* "docgen/utils/_machine_utils.pyx":75
+ *         return []
  * 
- * cdef str _get_disk_id():             # <<<<<<<<<<<<<<
- *     """Get disk identifier based on OS."""
+ * cdef list _get_macos_info():             # <<<<<<<<<<<<<<
+ *     """Get stable macOS-specific identifiers."""
  *     try:
  */
 
-static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_disk_id(void) {
-  PyObject *__pyx_v_win32api = NULL;
-  PyObject *__pyx_v_drives = NULL;
+static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_macos_info(void) {
+  PyObject *__pyx_v_info = NULL;
+  PyObject *__pyx_v_subprocess = NULL;
+  PyObject *__pyx_v_result = NULL;
+  PyObject *__pyx_v_line = NULL;
+  PyObject *__pyx_r = NULL;
+  __Pyx_RefNannyDeclarations
+  PyObject *__pyx_t_1 = NULL;
+  PyObject *__pyx_t_2 = NULL;
+  PyObject *__pyx_t_3 = NULL;
+  PyObject *__pyx_t_4 = NULL;
+  PyObject *__pyx_t_5 = NULL;
+  PyObject *__pyx_t_6 = NULL;
+  PyObject *__pyx_t_7 = NULL;
+  PyObject *__pyx_t_8 = NULL;
+  PyObject *__pyx_t_9 = NULL;
+  PyObject *__pyx_t_10 = NULL;
+  unsigned int __pyx_t_11;
+  Py_ssize_t __pyx_t_12;
+  PyObject *(*__pyx_t_13)(PyObject *);
+  int __pyx_t_14;
+  PyObject *__pyx_t_15 = NULL;
+  int __pyx_t_16;
+  int __pyx_lineno = 0;
+  const char *__pyx_filename = NULL;
+  int __pyx_clineno = 0;
+  __Pyx_RefNannySetupContext("_get_macos_info", 1);
+
+  /* "docgen/utils/_machine_utils.pyx":77
+ * cdef list _get_macos_info():
+ *     """Get stable macOS-specific identifiers."""
+ *     try:             # <<<<<<<<<<<<<<
+ *         info = []
+ * 
+ */
+  {
+    __Pyx_PyThreadState_declare
+    __Pyx_PyThreadState_assign
+    __Pyx_ExceptionSave(&__pyx_t_1, &__pyx_t_2, &__pyx_t_3);
+    __Pyx_XGOTREF(__pyx_t_1);
+    __Pyx_XGOTREF(__pyx_t_2);
+    __Pyx_XGOTREF(__pyx_t_3);
+    /*try:*/ {
+
+      /* "docgen/utils/_machine_utils.pyx":78
+ *     """Get stable macOS-specific identifiers."""
+ *     try:
+ *         info = []             # <<<<<<<<<<<<<<
+ * 
+ *         # Hardware UUID
+ */
+      __pyx_t_4 = PyList_New(0); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 78, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_4);
+      __pyx_v_info = ((PyObject*)__pyx_t_4);
+      __pyx_t_4 = 0;
+
+      /* "docgen/utils/_machine_utils.pyx":81
+ * 
+ *         # Hardware UUID
+ *         try:             # <<<<<<<<<<<<<<
+ *             import subprocess
+ *             result = subprocess.run(['system_profiler', 'SPHardwareDataType'],
+ */
+      {
+        __Pyx_PyThreadState_declare
+        __Pyx_PyThreadState_assign
+        __Pyx_ExceptionSave(&__pyx_t_5, &__pyx_t_6, &__pyx_t_7);
+        __Pyx_XGOTREF(__pyx_t_5);
+        __Pyx_XGOTREF(__pyx_t_6);
+        __Pyx_XGOTREF(__pyx_t_7);
+        /*try:*/ {
+
+          /* "docgen/utils/_machine_utils.pyx":82
+ *         # Hardware UUID
+ *         try:
+ *             import subprocess             # <<<<<<<<<<<<<<
+ *             result = subprocess.run(['system_profiler', 'SPHardwareDataType'],
+ *                                  capture_output=True, text=True)
+ */
+          __pyx_t_4 = __Pyx_ImportDottedModule(__pyx_n_s_subprocess, NULL); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 82, __pyx_L9_error)
+          __Pyx_GOTREF(__pyx_t_4);
+          __pyx_v_subprocess = __pyx_t_4;
+          __pyx_t_4 = 0;
+
+          /* "docgen/utils/_machine_utils.pyx":83
+ *         try:
+ *             import subprocess
+ *             result = subprocess.run(['system_profiler', 'SPHardwareDataType'],             # <<<<<<<<<<<<<<
+ *                                  capture_output=True, text=True)
+ *             for line in result.stdout.split('\n'):
+ */
+          __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_subprocess, __pyx_n_s_run); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 83, __pyx_L9_error)
+          __Pyx_GOTREF(__pyx_t_4);
+          __pyx_t_8 = PyList_New(2); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 83, __pyx_L9_error)
+          __Pyx_GOTREF(__pyx_t_8);
+          __Pyx_INCREF(__pyx_n_u_system_profiler);
+          __Pyx_GIVEREF(__pyx_n_u_system_profiler);
+          if (__Pyx_PyList_SET_ITEM(__pyx_t_8, 0, __pyx_n_u_system_profiler)) __PYX_ERR(0, 83, __pyx_L9_error);
+          __Pyx_INCREF(__pyx_n_u_SPHardwareDataType);
+          __Pyx_GIVEREF(__pyx_n_u_SPHardwareDataType);
+          if (__Pyx_PyList_SET_ITEM(__pyx_t_8, 1, __pyx_n_u_SPHardwareDataType)) __PYX_ERR(0, 83, __pyx_L9_error);
+          __pyx_t_9 = PyTuple_New(1); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 83, __pyx_L9_error)
+          __Pyx_GOTREF(__pyx_t_9);
+          __Pyx_GIVEREF(__pyx_t_8);
+          if (__Pyx_PyTuple_SET_ITEM(__pyx_t_9, 0, __pyx_t_8)) __PYX_ERR(0, 83, __pyx_L9_error);
+          __pyx_t_8 = 0;
+
+          /* "docgen/utils/_machine_utils.pyx":84
+ *             import subprocess
+ *             result = subprocess.run(['system_profiler', 'SPHardwareDataType'],
+ *                                  capture_output=True, text=True)             # <<<<<<<<<<<<<<
+ *             for line in result.stdout.split('\n'):
+ *                 if 'Hardware UUID' in line:
+ */
+          __pyx_t_8 = __Pyx_PyDict_NewPresized(2); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 84, __pyx_L9_error)
+          __Pyx_GOTREF(__pyx_t_8);
+          if (PyDict_SetItem(__pyx_t_8, __pyx_n_s_capture_output, Py_True) < 0) __PYX_ERR(0, 84, __pyx_L9_error)
+          if (PyDict_SetItem(__pyx_t_8, __pyx_n_s_text, Py_True) < 0) __PYX_ERR(0, 84, __pyx_L9_error)
+
+          /* "docgen/utils/_machine_utils.pyx":83
+ *         try:
+ *             import subprocess
+ *             result = subprocess.run(['system_profiler', 'SPHardwareDataType'],             # <<<<<<<<<<<<<<
+ *                                  capture_output=True, text=True)
+ *             for line in result.stdout.split('\n'):
+ */
+          __pyx_t_10 = __Pyx_PyObject_Call(__pyx_t_4, __pyx_t_9, __pyx_t_8); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 83, __pyx_L9_error)
+          __Pyx_GOTREF(__pyx_t_10);
+          __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+          __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
+          __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+          __pyx_v_result = __pyx_t_10;
+          __pyx_t_10 = 0;
+
+          /* "docgen/utils/_machine_utils.pyx":85
+ *             result = subprocess.run(['system_profiler', 'SPHardwareDataType'],
+ *                                  capture_output=True, text=True)
+ *             for line in result.stdout.split('\n'):             # <<<<<<<<<<<<<<
+ *                 if 'Hardware UUID' in line:
+ *                     info.append(line.split(':')[1].strip())
+ */
+          __pyx_t_8 = __Pyx_PyObject_GetAttrStr(__pyx_v_result, __pyx_n_s_stdout); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 85, __pyx_L9_error)
+          __Pyx_GOTREF(__pyx_t_8);
+          __pyx_t_9 = __Pyx_PyObject_GetAttrStr(__pyx_t_8, __pyx_n_s_split); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 85, __pyx_L9_error)
+          __Pyx_GOTREF(__pyx_t_9);
+          __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+          __pyx_t_8 = NULL;
+          __pyx_t_11 = 0;
+          #if CYTHON_UNPACK_METHODS
+          if (likely(PyMethod_Check(__pyx_t_9))) {
+            __pyx_t_8 = PyMethod_GET_SELF(__pyx_t_9);
+            if (likely(__pyx_t_8)) {
+              PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_9);
+              __Pyx_INCREF(__pyx_t_8);
+              __Pyx_INCREF(function);
+              __Pyx_DECREF_SET(__pyx_t_9, function);
+              __pyx_t_11 = 1;
+            }
+          }
+          #endif
+          {
+            PyObject *__pyx_callargs[2] = {__pyx_t_8, __pyx_kp_u__3};
+            __pyx_t_10 = __Pyx_PyObject_FastCall(__pyx_t_9, __pyx_callargs+1-__pyx_t_11, 1+__pyx_t_11);
+            __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
+            if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 85, __pyx_L9_error)
+            __Pyx_GOTREF(__pyx_t_10);
+            __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
+          }
+          if (likely(PyList_CheckExact(__pyx_t_10)) || PyTuple_CheckExact(__pyx_t_10)) {
+            __pyx_t_9 = __pyx_t_10; __Pyx_INCREF(__pyx_t_9);
+            __pyx_t_12 = 0;
+            __pyx_t_13 = NULL;
+          } else {
+            __pyx_t_12 = -1; __pyx_t_9 = PyObject_GetIter(__pyx_t_10); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 85, __pyx_L9_error)
+            __Pyx_GOTREF(__pyx_t_9);
+            __pyx_t_13 = __Pyx_PyObject_GetIterNextFunc(__pyx_t_9); if (unlikely(!__pyx_t_13)) __PYX_ERR(0, 85, __pyx_L9_error)
+          }
+          __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
+          for (;;) {
+            if (likely(!__pyx_t_13)) {
+              if (likely(PyList_CheckExact(__pyx_t_9))) {
+                {
+                  Py_ssize_t __pyx_temp = __Pyx_PyList_GET_SIZE(__pyx_t_9);
+                  #if !CYTHON_ASSUME_SAFE_MACROS
+                  if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 85, __pyx_L9_error)
+                  #endif
+                  if (__pyx_t_12 >= __pyx_temp) break;
+                }
+                #if CYTHON_ASSUME_SAFE_MACROS && !CYTHON_AVOID_BORROWED_REFS
+                __pyx_t_10 = PyList_GET_ITEM(__pyx_t_9, __pyx_t_12); __Pyx_INCREF(__pyx_t_10); __pyx_t_12++; if (unlikely((0 < 0))) __PYX_ERR(0, 85, __pyx_L9_error)
+                #else
+                __pyx_t_10 = __Pyx_PySequence_ITEM(__pyx_t_9, __pyx_t_12); __pyx_t_12++; if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 85, __pyx_L9_error)
+                __Pyx_GOTREF(__pyx_t_10);
+                #endif
+              } else {
+                {
+                  Py_ssize_t __pyx_temp = __Pyx_PyTuple_GET_SIZE(__pyx_t_9);
+                  #if !CYTHON_ASSUME_SAFE_MACROS
+                  if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 85, __pyx_L9_error)
+                  #endif
+                  if (__pyx_t_12 >= __pyx_temp) break;
+                }
+                #if CYTHON_ASSUME_SAFE_MACROS && !CYTHON_AVOID_BORROWED_REFS
+                __pyx_t_10 = PyTuple_GET_ITEM(__pyx_t_9, __pyx_t_12); __Pyx_INCREF(__pyx_t_10); __pyx_t_12++; if (unlikely((0 < 0))) __PYX_ERR(0, 85, __pyx_L9_error)
+                #else
+                __pyx_t_10 = __Pyx_PySequence_ITEM(__pyx_t_9, __pyx_t_12); __pyx_t_12++; if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 85, __pyx_L9_error)
+                __Pyx_GOTREF(__pyx_t_10);
+                #endif
+              }
+            } else {
+              __pyx_t_10 = __pyx_t_13(__pyx_t_9);
+              if (unlikely(!__pyx_t_10)) {
+                PyObject* exc_type = PyErr_Occurred();
+                if (exc_type) {
+                  if (likely(__Pyx_PyErr_GivenExceptionMatches(exc_type, PyExc_StopIteration))) PyErr_Clear();
+                  else __PYX_ERR(0, 85, __pyx_L9_error)
+                }
+                break;
+              }
+              __Pyx_GOTREF(__pyx_t_10);
+            }
+            __Pyx_XDECREF_SET(__pyx_v_line, __pyx_t_10);
+            __pyx_t_10 = 0;
+
+            /* "docgen/utils/_machine_utils.pyx":86
+ *                                  capture_output=True, text=True)
+ *             for line in result.stdout.split('\n'):
+ *                 if 'Hardware UUID' in line:             # <<<<<<<<<<<<<<
+ *                     info.append(line.split(':')[1].strip())
+ *                 elif 'Serial Number' in line:
+ */
+            __pyx_t_14 = (__Pyx_PySequence_ContainsTF(__pyx_kp_u_Hardware_UUID, __pyx_v_line, Py_EQ)); if (unlikely((__pyx_t_14 < 0))) __PYX_ERR(0, 86, __pyx_L9_error)
+            if (__pyx_t_14) {
+
+              /* "docgen/utils/_machine_utils.pyx":87
+ *             for line in result.stdout.split('\n'):
+ *                 if 'Hardware UUID' in line:
+ *                     info.append(line.split(':')[1].strip())             # <<<<<<<<<<<<<<
+ *                 elif 'Serial Number' in line:
+ *                     info.append(line.split(':')[1].strip())
+ */
+              __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_line, __pyx_n_s_split); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 87, __pyx_L9_error)
+              __Pyx_GOTREF(__pyx_t_4);
+              __pyx_t_15 = NULL;
+              __pyx_t_11 = 0;
+              #if CYTHON_UNPACK_METHODS
+              if (likely(PyMethod_Check(__pyx_t_4))) {
+                __pyx_t_15 = PyMethod_GET_SELF(__pyx_t_4);
+                if (likely(__pyx_t_15)) {
+                  PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_4);
+                  __Pyx_INCREF(__pyx_t_15);
+                  __Pyx_INCREF(function);
+                  __Pyx_DECREF_SET(__pyx_t_4, function);
+                  __pyx_t_11 = 1;
+                }
+              }
+              #endif
+              {
+                PyObject *__pyx_callargs[2] = {__pyx_t_15, __pyx_kp_u__4};
+                __pyx_t_8 = __Pyx_PyObject_FastCall(__pyx_t_4, __pyx_callargs+1-__pyx_t_11, 1+__pyx_t_11);
+                __Pyx_XDECREF(__pyx_t_15); __pyx_t_15 = 0;
+                if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 87, __pyx_L9_error)
+                __Pyx_GOTREF(__pyx_t_8);
+                __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+              }
+              __pyx_t_4 = __Pyx_GetItemInt(__pyx_t_8, 1, long, 1, __Pyx_PyInt_From_long, 0, 0, 1); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 87, __pyx_L9_error)
+              __Pyx_GOTREF(__pyx_t_4);
+              __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+              __pyx_t_8 = __Pyx_PyObject_GetAttrStr(__pyx_t_4, __pyx_n_s_strip); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 87, __pyx_L9_error)
+              __Pyx_GOTREF(__pyx_t_8);
+              __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+              __pyx_t_4 = NULL;
+              __pyx_t_11 = 0;
+              #if CYTHON_UNPACK_METHODS
+              if (likely(PyMethod_Check(__pyx_t_8))) {
+                __pyx_t_4 = PyMethod_GET_SELF(__pyx_t_8);
+                if (likely(__pyx_t_4)) {
+                  PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_8);
+                  __Pyx_INCREF(__pyx_t_4);
+                  __Pyx_INCREF(function);
+                  __Pyx_DECREF_SET(__pyx_t_8, function);
+                  __pyx_t_11 = 1;
+                }
+              }
+              #endif
+              {
+                PyObject *__pyx_callargs[2] = {__pyx_t_4, NULL};
+                __pyx_t_10 = __Pyx_PyObject_FastCall(__pyx_t_8, __pyx_callargs+1-__pyx_t_11, 0+__pyx_t_11);
+                __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
+                if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 87, __pyx_L9_error)
+                __Pyx_GOTREF(__pyx_t_10);
+                __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+              }
+              __pyx_t_16 = __Pyx_PyList_Append(__pyx_v_info, __pyx_t_10); if (unlikely(__pyx_t_16 == ((int)-1))) __PYX_ERR(0, 87, __pyx_L9_error)
+              __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
+
+              /* "docgen/utils/_machine_utils.pyx":86
+ *                                  capture_output=True, text=True)
+ *             for line in result.stdout.split('\n'):
+ *                 if 'Hardware UUID' in line:             # <<<<<<<<<<<<<<
+ *                     info.append(line.split(':')[1].strip())
+ *                 elif 'Serial Number' in line:
+ */
+              goto __pyx_L17;
+            }
+
+            /* "docgen/utils/_machine_utils.pyx":88
+ *                 if 'Hardware UUID' in line:
+ *                     info.append(line.split(':')[1].strip())
+ *                 elif 'Serial Number' in line:             # <<<<<<<<<<<<<<
+ *                     info.append(line.split(':')[1].strip())
+ *         except:
+ */
+            __pyx_t_14 = (__Pyx_PySequence_ContainsTF(__pyx_kp_u_Serial_Number, __pyx_v_line, Py_EQ)); if (unlikely((__pyx_t_14 < 0))) __PYX_ERR(0, 88, __pyx_L9_error)
+            if (__pyx_t_14) {
+
+              /* "docgen/utils/_machine_utils.pyx":89
+ *                     info.append(line.split(':')[1].strip())
+ *                 elif 'Serial Number' in line:
+ *                     info.append(line.split(':')[1].strip())             # <<<<<<<<<<<<<<
+ *         except:
+ *             pass
+ */
+              __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_line, __pyx_n_s_split); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 89, __pyx_L9_error)
+              __Pyx_GOTREF(__pyx_t_4);
+              __pyx_t_15 = NULL;
+              __pyx_t_11 = 0;
+              #if CYTHON_UNPACK_METHODS
+              if (likely(PyMethod_Check(__pyx_t_4))) {
+                __pyx_t_15 = PyMethod_GET_SELF(__pyx_t_4);
+                if (likely(__pyx_t_15)) {
+                  PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_4);
+                  __Pyx_INCREF(__pyx_t_15);
+                  __Pyx_INCREF(function);
+                  __Pyx_DECREF_SET(__pyx_t_4, function);
+                  __pyx_t_11 = 1;
+                }
+              }
+              #endif
+              {
+                PyObject *__pyx_callargs[2] = {__pyx_t_15, __pyx_kp_u__4};
+                __pyx_t_8 = __Pyx_PyObject_FastCall(__pyx_t_4, __pyx_callargs+1-__pyx_t_11, 1+__pyx_t_11);
+                __Pyx_XDECREF(__pyx_t_15); __pyx_t_15 = 0;
+                if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 89, __pyx_L9_error)
+                __Pyx_GOTREF(__pyx_t_8);
+                __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+              }
+              __pyx_t_4 = __Pyx_GetItemInt(__pyx_t_8, 1, long, 1, __Pyx_PyInt_From_long, 0, 0, 1); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 89, __pyx_L9_error)
+              __Pyx_GOTREF(__pyx_t_4);
+              __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+              __pyx_t_8 = __Pyx_PyObject_GetAttrStr(__pyx_t_4, __pyx_n_s_strip); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 89, __pyx_L9_error)
+              __Pyx_GOTREF(__pyx_t_8);
+              __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+              __pyx_t_4 = NULL;
+              __pyx_t_11 = 0;
+              #if CYTHON_UNPACK_METHODS
+              if (likely(PyMethod_Check(__pyx_t_8))) {
+                __pyx_t_4 = PyMethod_GET_SELF(__pyx_t_8);
+                if (likely(__pyx_t_4)) {
+                  PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_8);
+                  __Pyx_INCREF(__pyx_t_4);
+                  __Pyx_INCREF(function);
+                  __Pyx_DECREF_SET(__pyx_t_8, function);
+                  __pyx_t_11 = 1;
+                }
+              }
+              #endif
+              {
+                PyObject *__pyx_callargs[2] = {__pyx_t_4, NULL};
+                __pyx_t_10 = __Pyx_PyObject_FastCall(__pyx_t_8, __pyx_callargs+1-__pyx_t_11, 0+__pyx_t_11);
+                __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
+                if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 89, __pyx_L9_error)
+                __Pyx_GOTREF(__pyx_t_10);
+                __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+              }
+              __pyx_t_16 = __Pyx_PyList_Append(__pyx_v_info, __pyx_t_10); if (unlikely(__pyx_t_16 == ((int)-1))) __PYX_ERR(0, 89, __pyx_L9_error)
+              __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
+
+              /* "docgen/utils/_machine_utils.pyx":88
+ *                 if 'Hardware UUID' in line:
+ *                     info.append(line.split(':')[1].strip())
+ *                 elif 'Serial Number' in line:             # <<<<<<<<<<<<<<
+ *                     info.append(line.split(':')[1].strip())
+ *         except:
+ */
+            }
+            __pyx_L17:;
+
+            /* "docgen/utils/_machine_utils.pyx":85
+ *             result = subprocess.run(['system_profiler', 'SPHardwareDataType'],
+ *                                  capture_output=True, text=True)
+ *             for line in result.stdout.split('\n'):             # <<<<<<<<<<<<<<
+ *                 if 'Hardware UUID' in line:
+ *                     info.append(line.split(':')[1].strip())
+ */
+          }
+          __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
+
+          /* "docgen/utils/_machine_utils.pyx":81
+ * 
+ *         # Hardware UUID
+ *         try:             # <<<<<<<<<<<<<<
+ *             import subprocess
+ *             result = subprocess.run(['system_profiler', 'SPHardwareDataType'],
+ */
+        }
+        __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
+        __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+        __Pyx_XDECREF(__pyx_t_7); __pyx_t_7 = 0;
+        goto __pyx_L14_try_end;
+        __pyx_L9_error:;
+        __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
+        __Pyx_XDECREF(__pyx_t_15); __pyx_t_15 = 0;
+        __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
+        __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
+        __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
+
+        /* "docgen/utils/_machine_utils.pyx":90
+ *                 elif 'Serial Number' in line:
+ *                     info.append(line.split(':')[1].strip())
+ *         except:             # <<<<<<<<<<<<<<
+ *             pass
+ * 
+ */
+        /*except:*/ {
+          __Pyx_ErrRestore(0,0,0);
+          goto __pyx_L10_exception_handled;
+        }
+        __pyx_L10_exception_handled:;
+        __Pyx_XGIVEREF(__pyx_t_5);
+        __Pyx_XGIVEREF(__pyx_t_6);
+        __Pyx_XGIVEREF(__pyx_t_7);
+        __Pyx_ExceptionReset(__pyx_t_5, __pyx_t_6, __pyx_t_7);
+        __pyx_L14_try_end:;
+      }
+
+      /* "docgen/utils/_machine_utils.pyx":93
+ *             pass
+ * 
+ *         return info             # <<<<<<<<<<<<<<
+ *     except:
+ *         return []
+ */
+      __Pyx_XDECREF(__pyx_r);
+      __Pyx_INCREF(__pyx_v_info);
+      __pyx_r = __pyx_v_info;
+      goto __pyx_L7_try_return;
+
+      /* "docgen/utils/_machine_utils.pyx":77
+ * cdef list _get_macos_info():
+ *     """Get stable macOS-specific identifiers."""
+ *     try:             # <<<<<<<<<<<<<<
+ *         info = []
+ * 
+ */
+    }
+    __pyx_L3_error:;
+    __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
+    __Pyx_XDECREF(__pyx_t_15); __pyx_t_15 = 0;
+    __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
+    __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
+    __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
+
+    /* "docgen/utils/_machine_utils.pyx":94
+ * 
+ *         return info
+ *     except:             # <<<<<<<<<<<<<<
+ *         return []
+ * 
+ */
+    /*except:*/ {
+      __Pyx_AddTraceback("docgen.utils._machine_utils._get_macos_info", __pyx_clineno, __pyx_lineno, __pyx_filename);
+      if (__Pyx_GetException(&__pyx_t_9, &__pyx_t_10, &__pyx_t_8) < 0) __PYX_ERR(0, 94, __pyx_L5_except_error)
+      __Pyx_XGOTREF(__pyx_t_9);
+      __Pyx_XGOTREF(__pyx_t_10);
+      __Pyx_XGOTREF(__pyx_t_8);
+
+      /* "docgen/utils/_machine_utils.pyx":95
+ *         return info
+ *     except:
+ *         return []             # <<<<<<<<<<<<<<
+ * 
+ * cdef list _get_linux_info():
+ */
+      __Pyx_XDECREF(__pyx_r);
+      __pyx_t_4 = PyList_New(0); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 95, __pyx_L5_except_error)
+      __Pyx_GOTREF(__pyx_t_4);
+      __pyx_r = ((PyObject*)__pyx_t_4);
+      __pyx_t_4 = 0;
+      __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+      __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
+      __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
+      goto __pyx_L6_except_return;
+    }
+
+    /* "docgen/utils/_machine_utils.pyx":77
+ * cdef list _get_macos_info():
+ *     """Get stable macOS-specific identifiers."""
+ *     try:             # <<<<<<<<<<<<<<
+ *         info = []
+ * 
+ */
+    __pyx_L5_except_error:;
+    __Pyx_XGIVEREF(__pyx_t_1);
+    __Pyx_XGIVEREF(__pyx_t_2);
+    __Pyx_XGIVEREF(__pyx_t_3);
+    __Pyx_ExceptionReset(__pyx_t_1, __pyx_t_2, __pyx_t_3);
+    goto __pyx_L1_error;
+    __pyx_L7_try_return:;
+    __Pyx_XGIVEREF(__pyx_t_1);
+    __Pyx_XGIVEREF(__pyx_t_2);
+    __Pyx_XGIVEREF(__pyx_t_3);
+    __Pyx_ExceptionReset(__pyx_t_1, __pyx_t_2, __pyx_t_3);
+    goto __pyx_L0;
+    __pyx_L6_except_return:;
+    __Pyx_XGIVEREF(__pyx_t_1);
+    __Pyx_XGIVEREF(__pyx_t_2);
+    __Pyx_XGIVEREF(__pyx_t_3);
+    __Pyx_ExceptionReset(__pyx_t_1, __pyx_t_2, __pyx_t_3);
+    goto __pyx_L0;
+  }
+
+  /* "docgen/utils/_machine_utils.pyx":75
+ *         return []
+ * 
+ * cdef list _get_macos_info():             # <<<<<<<<<<<<<<
+ *     """Get stable macOS-specific identifiers."""
+ *     try:
+ */
+
+  /* function exit code */
+  __pyx_L1_error:;
+  __Pyx_XDECREF(__pyx_t_4);
+  __Pyx_XDECREF(__pyx_t_8);
+  __Pyx_XDECREF(__pyx_t_9);
+  __Pyx_XDECREF(__pyx_t_10);
+  __Pyx_XDECREF(__pyx_t_15);
+  __Pyx_AddTraceback("docgen.utils._machine_utils._get_macos_info", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __pyx_r = 0;
+  __pyx_L0:;
+  __Pyx_XDECREF(__pyx_v_info);
+  __Pyx_XDECREF(__pyx_v_subprocess);
+  __Pyx_XDECREF(__pyx_v_result);
+  __Pyx_XDECREF(__pyx_v_line);
+  __Pyx_XGIVEREF(__pyx_r);
+  __Pyx_RefNannyFinishContext();
+  return __pyx_r;
+}
+
+/* "docgen/utils/_machine_utils.pyx":97
+ *         return []
+ * 
+ * cdef list _get_linux_info():             # <<<<<<<<<<<<<<
+ *     """Get stable Linux-specific identifiers."""
+ *     try:
+ */
+
+static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_linux_info(void) {
+  PyObject *__pyx_v_info = NULL;
+  PyObject *__pyx_v_path = NULL;
+  PyObject *__pyx_v_f = NULL;
+  PyObject *__pyx_v_content = NULL;
+  PyObject *__pyx_r = NULL;
+  __Pyx_RefNannyDeclarations
+  PyObject *__pyx_t_1 = NULL;
+  PyObject *__pyx_t_2 = NULL;
+  PyObject *__pyx_t_3 = NULL;
+  PyObject *__pyx_t_4 = NULL;
+  Py_ssize_t __pyx_t_5;
+  PyObject *__pyx_t_6 = NULL;
+  PyObject *__pyx_t_7 = NULL;
+  PyObject *__pyx_t_8 = NULL;
+  PyObject *__pyx_t_9 = NULL;
+  PyObject *__pyx_t_10 = NULL;
+  PyObject *__pyx_t_11 = NULL;
+  unsigned int __pyx_t_12;
+  int __pyx_t_13;
+  PyObject *__pyx_t_14 = NULL;
+  PyObject *__pyx_t_15 = NULL;
+  PyObject *__pyx_t_16 = NULL;
+  PyObject *__pyx_t_17 = NULL;
+  PyObject *__pyx_t_18 = NULL;
+  int __pyx_t_19;
+  PyObject *__pyx_t_20 = NULL;
+  int __pyx_t_21;
+  int __pyx_lineno = 0;
+  const char *__pyx_filename = NULL;
+  int __pyx_clineno = 0;
+  __Pyx_RefNannySetupContext("_get_linux_info", 1);
+
+  /* "docgen/utils/_machine_utils.pyx":99
+ * cdef list _get_linux_info():
+ *     """Get stable Linux-specific identifiers."""
+ *     try:             # <<<<<<<<<<<<<<
+ *         info = []
+ * 
+ */
+  {
+    __Pyx_PyThreadState_declare
+    __Pyx_PyThreadState_assign
+    __Pyx_ExceptionSave(&__pyx_t_1, &__pyx_t_2, &__pyx_t_3);
+    __Pyx_XGOTREF(__pyx_t_1);
+    __Pyx_XGOTREF(__pyx_t_2);
+    __Pyx_XGOTREF(__pyx_t_3);
+    /*try:*/ {
+
+      /* "docgen/utils/_machine_utils.pyx":100
+ *     """Get stable Linux-specific identifiers."""
+ *     try:
+ *         info = []             # <<<<<<<<<<<<<<
+ * 
+ *         # Try machine-id files
+ */
+      __pyx_t_4 = PyList_New(0); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 100, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_4);
+      __pyx_v_info = ((PyObject*)__pyx_t_4);
+      __pyx_t_4 = 0;
+
+      /* "docgen/utils/_machine_utils.pyx":103
+ * 
+ *         # Try machine-id files
+ *         for path in ['/etc/machine-id', '/var/lib/dbus/machine-id']:             # <<<<<<<<<<<<<<
+ *             try:
+ *                 if os.path.exists(path):
+ */
+      __pyx_t_4 = __pyx_tuple__5; __Pyx_INCREF(__pyx_t_4);
+      __pyx_t_5 = 0;
+      for (;;) {
+        if (__pyx_t_5 >= 2) break;
+        #if CYTHON_ASSUME_SAFE_MACROS && !CYTHON_AVOID_BORROWED_REFS
+        __pyx_t_6 = PyTuple_GET_ITEM(__pyx_t_4, __pyx_t_5); __Pyx_INCREF(__pyx_t_6); __pyx_t_5++; if (unlikely((0 < 0))) __PYX_ERR(0, 103, __pyx_L3_error)
+        #else
+        __pyx_t_6 = __Pyx_PySequence_ITEM(__pyx_t_4, __pyx_t_5); __pyx_t_5++; if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 103, __pyx_L3_error)
+        __Pyx_GOTREF(__pyx_t_6);
+        #endif
+        __Pyx_XDECREF_SET(__pyx_v_path, ((PyObject*)__pyx_t_6));
+        __pyx_t_6 = 0;
+
+        /* "docgen/utils/_machine_utils.pyx":104
+ *         # Try machine-id files
+ *         for path in ['/etc/machine-id', '/var/lib/dbus/machine-id']:
+ *             try:             # <<<<<<<<<<<<<<
+ *                 if os.path.exists(path):
+ *                     with open(path, 'r') as f:
+ */
+        {
+          __Pyx_PyThreadState_declare
+          __Pyx_PyThreadState_assign
+          __Pyx_ExceptionSave(&__pyx_t_7, &__pyx_t_8, &__pyx_t_9);
+          __Pyx_XGOTREF(__pyx_t_7);
+          __Pyx_XGOTREF(__pyx_t_8);
+          __Pyx_XGOTREF(__pyx_t_9);
+          /*try:*/ {
+
+            /* "docgen/utils/_machine_utils.pyx":105
+ *         for path in ['/etc/machine-id', '/var/lib/dbus/machine-id']:
+ *             try:
+ *                 if os.path.exists(path):             # <<<<<<<<<<<<<<
+ *                     with open(path, 'r') as f:
+ *                         content = f.read().strip()
+ */
+            __Pyx_GetModuleGlobalName(__pyx_t_10, __pyx_n_s_os); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 105, __pyx_L11_error)
+            __Pyx_GOTREF(__pyx_t_10);
+            __pyx_t_11 = __Pyx_PyObject_GetAttrStr(__pyx_t_10, __pyx_n_s_path); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 105, __pyx_L11_error)
+            __Pyx_GOTREF(__pyx_t_11);
+            __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
+            __pyx_t_10 = __Pyx_PyObject_GetAttrStr(__pyx_t_11, __pyx_n_s_exists); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 105, __pyx_L11_error)
+            __Pyx_GOTREF(__pyx_t_10);
+            __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
+            __pyx_t_11 = NULL;
+            __pyx_t_12 = 0;
+            #if CYTHON_UNPACK_METHODS
+            if (likely(PyMethod_Check(__pyx_t_10))) {
+              __pyx_t_11 = PyMethod_GET_SELF(__pyx_t_10);
+              if (likely(__pyx_t_11)) {
+                PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_10);
+                __Pyx_INCREF(__pyx_t_11);
+                __Pyx_INCREF(function);
+                __Pyx_DECREF_SET(__pyx_t_10, function);
+                __pyx_t_12 = 1;
+              }
+            }
+            #endif
+            {
+              PyObject *__pyx_callargs[2] = {__pyx_t_11, __pyx_v_path};
+              __pyx_t_6 = __Pyx_PyObject_FastCall(__pyx_t_10, __pyx_callargs+1-__pyx_t_12, 1+__pyx_t_12);
+              __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+              if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 105, __pyx_L11_error)
+              __Pyx_GOTREF(__pyx_t_6);
+              __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
+            }
+            __pyx_t_13 = __Pyx_PyObject_IsTrue(__pyx_t_6); if (unlikely((__pyx_t_13 < 0))) __PYX_ERR(0, 105, __pyx_L11_error)
+            __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+            if (__pyx_t_13) {
+
+              /* "docgen/utils/_machine_utils.pyx":106
+ *             try:
+ *                 if os.path.exists(path):
+ *                     with open(path, 'r') as f:             # <<<<<<<<<<<<<<
+ *                         content = f.read().strip()
+ *                         if content:
+ */
+              /*with:*/ {
+                __pyx_t_6 = PyTuple_New(2); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 106, __pyx_L11_error)
+                __Pyx_GOTREF(__pyx_t_6);
+                __Pyx_INCREF(__pyx_v_path);
+                __Pyx_GIVEREF(__pyx_v_path);
+                if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 0, __pyx_v_path)) __PYX_ERR(0, 106, __pyx_L11_error);
+                __Pyx_INCREF(__pyx_n_u_r);
+                __Pyx_GIVEREF(__pyx_n_u_r);
+                if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 1, __pyx_n_u_r)) __PYX_ERR(0, 106, __pyx_L11_error);
+                __pyx_t_10 = __Pyx_PyObject_Call(__pyx_builtin_open, __pyx_t_6, NULL); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 106, __pyx_L11_error)
+                __Pyx_GOTREF(__pyx_t_10);
+                __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+                __pyx_t_14 = __Pyx_PyObject_LookupSpecial(__pyx_t_10, __pyx_n_s_exit); if (unlikely(!__pyx_t_14)) __PYX_ERR(0, 106, __pyx_L11_error)
+                __Pyx_GOTREF(__pyx_t_14);
+                __pyx_t_11 = __Pyx_PyObject_LookupSpecial(__pyx_t_10, __pyx_n_s_enter); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 106, __pyx_L20_error)
+                __Pyx_GOTREF(__pyx_t_11);
+                __pyx_t_15 = NULL;
+                __pyx_t_12 = 0;
+                #if CYTHON_UNPACK_METHODS
+                if (likely(PyMethod_Check(__pyx_t_11))) {
+                  __pyx_t_15 = PyMethod_GET_SELF(__pyx_t_11);
+                  if (likely(__pyx_t_15)) {
+                    PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_11);
+                    __Pyx_INCREF(__pyx_t_15);
+                    __Pyx_INCREF(function);
+                    __Pyx_DECREF_SET(__pyx_t_11, function);
+                    __pyx_t_12 = 1;
+                  }
+                }
+                #endif
+                {
+                  PyObject *__pyx_callargs[2] = {__pyx_t_15, NULL};
+                  __pyx_t_6 = __Pyx_PyObject_FastCall(__pyx_t_11, __pyx_callargs+1-__pyx_t_12, 0+__pyx_t_12);
+                  __Pyx_XDECREF(__pyx_t_15); __pyx_t_15 = 0;
+                  if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 106, __pyx_L20_error)
+                  __Pyx_GOTREF(__pyx_t_6);
+                  __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
+                }
+                __pyx_t_11 = __pyx_t_6;
+                __pyx_t_6 = 0;
+                __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
+                /*try:*/ {
+                  {
+                    __Pyx_PyThreadState_declare
+                    __Pyx_PyThreadState_assign
+                    __Pyx_ExceptionSave(&__pyx_t_16, &__pyx_t_17, &__pyx_t_18);
+                    __Pyx_XGOTREF(__pyx_t_16);
+                    __Pyx_XGOTREF(__pyx_t_17);
+                    __Pyx_XGOTREF(__pyx_t_18);
+                    /*try:*/ {
+                      __Pyx_XDECREF_SET(__pyx_v_f, __pyx_t_11);
+                      __pyx_t_11 = 0;
+
+                      /* "docgen/utils/_machine_utils.pyx":107
+ *                 if os.path.exists(path):
+ *                     with open(path, 'r') as f:
+ *                         content = f.read().strip()             # <<<<<<<<<<<<<<
+ *                         if content:
+ *                             info.append(content)
+ */
+                      __pyx_t_6 = __Pyx_PyObject_GetAttrStr(__pyx_v_f, __pyx_n_s_read); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 107, __pyx_L26_error)
+                      __Pyx_GOTREF(__pyx_t_6);
+                      __pyx_t_15 = NULL;
+                      __pyx_t_12 = 0;
+                      #if CYTHON_UNPACK_METHODS
+                      if (likely(PyMethod_Check(__pyx_t_6))) {
+                        __pyx_t_15 = PyMethod_GET_SELF(__pyx_t_6);
+                        if (likely(__pyx_t_15)) {
+                          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_6);
+                          __Pyx_INCREF(__pyx_t_15);
+                          __Pyx_INCREF(function);
+                          __Pyx_DECREF_SET(__pyx_t_6, function);
+                          __pyx_t_12 = 1;
+                        }
+                      }
+                      #endif
+                      {
+                        PyObject *__pyx_callargs[2] = {__pyx_t_15, NULL};
+                        __pyx_t_10 = __Pyx_PyObject_FastCall(__pyx_t_6, __pyx_callargs+1-__pyx_t_12, 0+__pyx_t_12);
+                        __Pyx_XDECREF(__pyx_t_15); __pyx_t_15 = 0;
+                        if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 107, __pyx_L26_error)
+                        __Pyx_GOTREF(__pyx_t_10);
+                        __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+                      }
+                      __pyx_t_6 = __Pyx_PyObject_GetAttrStr(__pyx_t_10, __pyx_n_s_strip); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 107, __pyx_L26_error)
+                      __Pyx_GOTREF(__pyx_t_6);
+                      __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
+                      __pyx_t_10 = NULL;
+                      __pyx_t_12 = 0;
+                      #if CYTHON_UNPACK_METHODS
+                      if (likely(PyMethod_Check(__pyx_t_6))) {
+                        __pyx_t_10 = PyMethod_GET_SELF(__pyx_t_6);
+                        if (likely(__pyx_t_10)) {
+                          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_6);
+                          __Pyx_INCREF(__pyx_t_10);
+                          __Pyx_INCREF(function);
+                          __Pyx_DECREF_SET(__pyx_t_6, function);
+                          __pyx_t_12 = 1;
+                        }
+                      }
+                      #endif
+                      {
+                        PyObject *__pyx_callargs[2] = {__pyx_t_10, NULL};
+                        __pyx_t_11 = __Pyx_PyObject_FastCall(__pyx_t_6, __pyx_callargs+1-__pyx_t_12, 0+__pyx_t_12);
+                        __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
+                        if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 107, __pyx_L26_error)
+                        __Pyx_GOTREF(__pyx_t_11);
+                        __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+                      }
+                      __Pyx_XDECREF_SET(__pyx_v_content, __pyx_t_11);
+                      __pyx_t_11 = 0;
+
+                      /* "docgen/utils/_machine_utils.pyx":108
+ *                     with open(path, 'r') as f:
+ *                         content = f.read().strip()
+ *                         if content:             # <<<<<<<<<<<<<<
+ *                             info.append(content)
+ *             except:
+ */
+                      __pyx_t_13 = __Pyx_PyObject_IsTrue(__pyx_v_content); if (unlikely((__pyx_t_13 < 0))) __PYX_ERR(0, 108, __pyx_L26_error)
+                      if (__pyx_t_13) {
+
+                        /* "docgen/utils/_machine_utils.pyx":109
+ *                         content = f.read().strip()
+ *                         if content:
+ *                             info.append(content)             # <<<<<<<<<<<<<<
+ *             except:
+ *                 pass
+ */
+                        __pyx_t_19 = __Pyx_PyList_Append(__pyx_v_info, __pyx_v_content); if (unlikely(__pyx_t_19 == ((int)-1))) __PYX_ERR(0, 109, __pyx_L26_error)
+
+                        /* "docgen/utils/_machine_utils.pyx":108
+ *                     with open(path, 'r') as f:
+ *                         content = f.read().strip()
+ *                         if content:             # <<<<<<<<<<<<<<
+ *                             info.append(content)
+ *             except:
+ */
+                      }
+
+                      /* "docgen/utils/_machine_utils.pyx":106
+ *             try:
+ *                 if os.path.exists(path):
+ *                     with open(path, 'r') as f:             # <<<<<<<<<<<<<<
+ *                         content = f.read().strip()
+ *                         if content:
+ */
+                    }
+                    __Pyx_XDECREF(__pyx_t_16); __pyx_t_16 = 0;
+                    __Pyx_XDECREF(__pyx_t_17); __pyx_t_17 = 0;
+                    __Pyx_XDECREF(__pyx_t_18); __pyx_t_18 = 0;
+                    goto __pyx_L33_try_end;
+                    __pyx_L26_error:;
+                    __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
+                    __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+                    __Pyx_XDECREF(__pyx_t_15); __pyx_t_15 = 0;
+                    __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+                    /*except:*/ {
+                      __Pyx_AddTraceback("docgen.utils._machine_utils._get_linux_info", __pyx_clineno, __pyx_lineno, __pyx_filename);
+                      if (__Pyx_GetException(&__pyx_t_11, &__pyx_t_6, &__pyx_t_10) < 0) __PYX_ERR(0, 106, __pyx_L28_except_error)
+                      __Pyx_XGOTREF(__pyx_t_11);
+                      __Pyx_XGOTREF(__pyx_t_6);
+                      __Pyx_XGOTREF(__pyx_t_10);
+                      __pyx_t_15 = PyTuple_Pack(3, __pyx_t_11, __pyx_t_6, __pyx_t_10); if (unlikely(!__pyx_t_15)) __PYX_ERR(0, 106, __pyx_L28_except_error)
+                      __Pyx_GOTREF(__pyx_t_15);
+                      __pyx_t_20 = __Pyx_PyObject_Call(__pyx_t_14, __pyx_t_15, NULL);
+                      __Pyx_DECREF(__pyx_t_14); __pyx_t_14 = 0;
+                      __Pyx_DECREF(__pyx_t_15); __pyx_t_15 = 0;
+                      if (unlikely(!__pyx_t_20)) __PYX_ERR(0, 106, __pyx_L28_except_error)
+                      __Pyx_GOTREF(__pyx_t_20);
+                      __pyx_t_13 = __Pyx_PyObject_IsTrue(__pyx_t_20);
+                      __Pyx_DECREF(__pyx_t_20); __pyx_t_20 = 0;
+                      if (__pyx_t_13 < 0) __PYX_ERR(0, 106, __pyx_L28_except_error)
+                      __pyx_t_21 = (!__pyx_t_13);
+                      if (unlikely(__pyx_t_21)) {
+                        __Pyx_GIVEREF(__pyx_t_11);
+                        __Pyx_GIVEREF(__pyx_t_6);
+                        __Pyx_XGIVEREF(__pyx_t_10);
+                        __Pyx_ErrRestoreWithState(__pyx_t_11, __pyx_t_6, __pyx_t_10);
+                        __pyx_t_11 = 0; __pyx_t_6 = 0; __pyx_t_10 = 0; 
+                        __PYX_ERR(0, 106, __pyx_L28_except_error)
+                      }
+                      __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+                      __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+                      __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
+                      goto __pyx_L27_exception_handled;
+                    }
+                    __pyx_L28_except_error:;
+                    __Pyx_XGIVEREF(__pyx_t_16);
+                    __Pyx_XGIVEREF(__pyx_t_17);
+                    __Pyx_XGIVEREF(__pyx_t_18);
+                    __Pyx_ExceptionReset(__pyx_t_16, __pyx_t_17, __pyx_t_18);
+                    goto __pyx_L11_error;
+                    __pyx_L27_exception_handled:;
+                    __Pyx_XGIVEREF(__pyx_t_16);
+                    __Pyx_XGIVEREF(__pyx_t_17);
+                    __Pyx_XGIVEREF(__pyx_t_18);
+                    __Pyx_ExceptionReset(__pyx_t_16, __pyx_t_17, __pyx_t_18);
+                    __pyx_L33_try_end:;
+                  }
+                }
+                /*finally:*/ {
+                  /*normal exit:*/{
+                    if (__pyx_t_14) {
+                      __pyx_t_18 = __Pyx_PyObject_Call(__pyx_t_14, __pyx_tuple__6, NULL);
+                      __Pyx_DECREF(__pyx_t_14); __pyx_t_14 = 0;
+                      if (unlikely(!__pyx_t_18)) __PYX_ERR(0, 106, __pyx_L11_error)
+                      __Pyx_GOTREF(__pyx_t_18);
+                      __Pyx_DECREF(__pyx_t_18); __pyx_t_18 = 0;
+                    }
+                    goto __pyx_L25;
+                  }
+                  __pyx_L25:;
+                }
+                goto __pyx_L38;
+                __pyx_L20_error:;
+                __Pyx_DECREF(__pyx_t_14); __pyx_t_14 = 0;
+                goto __pyx_L11_error;
+                __pyx_L38:;
+              }
+
+              /* "docgen/utils/_machine_utils.pyx":105
+ *         for path in ['/etc/machine-id', '/var/lib/dbus/machine-id']:
+ *             try:
+ *                 if os.path.exists(path):             # <<<<<<<<<<<<<<
+ *                     with open(path, 'r') as f:
+ *                         content = f.read().strip()
+ */
+            }
+
+            /* "docgen/utils/_machine_utils.pyx":104
+ *         # Try machine-id files
+ *         for path in ['/etc/machine-id', '/var/lib/dbus/machine-id']:
+ *             try:             # <<<<<<<<<<<<<<
+ *                 if os.path.exists(path):
+ *                     with open(path, 'r') as f:
+ */
+          }
+          __Pyx_XDECREF(__pyx_t_7); __pyx_t_7 = 0;
+          __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
+          __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
+          goto __pyx_L18_try_end;
+          __pyx_L11_error:;
+          __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
+          __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+          __Pyx_XDECREF(__pyx_t_15); __pyx_t_15 = 0;
+          __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+
+          /* "docgen/utils/_machine_utils.pyx":110
+ *                         if content:
+ *                             info.append(content)
+ *             except:             # <<<<<<<<<<<<<<
+ *                 pass
+ * 
+ */
+          /*except:*/ {
+            __Pyx_ErrRestore(0,0,0);
+            goto __pyx_L12_exception_handled;
+          }
+          __pyx_L12_exception_handled:;
+          __Pyx_XGIVEREF(__pyx_t_7);
+          __Pyx_XGIVEREF(__pyx_t_8);
+          __Pyx_XGIVEREF(__pyx_t_9);
+          __Pyx_ExceptionReset(__pyx_t_7, __pyx_t_8, __pyx_t_9);
+          __pyx_L18_try_end:;
+        }
+
+        /* "docgen/utils/_machine_utils.pyx":103
+ * 
+ *         # Try machine-id files
+ *         for path in ['/etc/machine-id', '/var/lib/dbus/machine-id']:             # <<<<<<<<<<<<<<
+ *             try:
+ *                 if os.path.exists(path):
+ */
+      }
+      __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+
+      /* "docgen/utils/_machine_utils.pyx":114
+ * 
+ *         # Try DMI system information
+ *         try:             # <<<<<<<<<<<<<<
+ *             for path in ['/sys/class/dmi/id/product_uuid',
+ *                         '/sys/class/dmi/id/board_serial']:
+ */
+      {
+        __Pyx_PyThreadState_declare
+        __Pyx_PyThreadState_assign
+        __Pyx_ExceptionSave(&__pyx_t_9, &__pyx_t_8, &__pyx_t_7);
+        __Pyx_XGOTREF(__pyx_t_9);
+        __Pyx_XGOTREF(__pyx_t_8);
+        __Pyx_XGOTREF(__pyx_t_7);
+        /*try:*/ {
+
+          /* "docgen/utils/_machine_utils.pyx":115
+ *         # Try DMI system information
+ *         try:
+ *             for path in ['/sys/class/dmi/id/product_uuid',             # <<<<<<<<<<<<<<
+ *                         '/sys/class/dmi/id/board_serial']:
+ *                 if os.path.exists(path):
+ */
+          __pyx_t_4 = __pyx_tuple__7; __Pyx_INCREF(__pyx_t_4);
+          __pyx_t_5 = 0;
+          for (;;) {
+            if (__pyx_t_5 >= 2) break;
+            #if CYTHON_ASSUME_SAFE_MACROS && !CYTHON_AVOID_BORROWED_REFS
+            __pyx_t_10 = PyTuple_GET_ITEM(__pyx_t_4, __pyx_t_5); __Pyx_INCREF(__pyx_t_10); __pyx_t_5++; if (unlikely((0 < 0))) __PYX_ERR(0, 115, __pyx_L40_error)
+            #else
+            __pyx_t_10 = __Pyx_PySequence_ITEM(__pyx_t_4, __pyx_t_5); __pyx_t_5++; if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 115, __pyx_L40_error)
+            __Pyx_GOTREF(__pyx_t_10);
+            #endif
+            __Pyx_XDECREF_SET(__pyx_v_path, ((PyObject*)__pyx_t_10));
+            __pyx_t_10 = 0;
+
+            /* "docgen/utils/_machine_utils.pyx":117
+ *             for path in ['/sys/class/dmi/id/product_uuid',
+ *                         '/sys/class/dmi/id/board_serial']:
+ *                 if os.path.exists(path):             # <<<<<<<<<<<<<<
+ *                     with open(path, 'r') as f:
+ *                         content = f.read().strip()
+ */
+            __Pyx_GetModuleGlobalName(__pyx_t_6, __pyx_n_s_os); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 117, __pyx_L40_error)
+            __Pyx_GOTREF(__pyx_t_6);
+            __pyx_t_11 = __Pyx_PyObject_GetAttrStr(__pyx_t_6, __pyx_n_s_path); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 117, __pyx_L40_error)
+            __Pyx_GOTREF(__pyx_t_11);
+            __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+            __pyx_t_6 = __Pyx_PyObject_GetAttrStr(__pyx_t_11, __pyx_n_s_exists); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 117, __pyx_L40_error)
+            __Pyx_GOTREF(__pyx_t_6);
+            __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
+            __pyx_t_11 = NULL;
+            __pyx_t_12 = 0;
+            #if CYTHON_UNPACK_METHODS
+            if (likely(PyMethod_Check(__pyx_t_6))) {
+              __pyx_t_11 = PyMethod_GET_SELF(__pyx_t_6);
+              if (likely(__pyx_t_11)) {
+                PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_6);
+                __Pyx_INCREF(__pyx_t_11);
+                __Pyx_INCREF(function);
+                __Pyx_DECREF_SET(__pyx_t_6, function);
+                __pyx_t_12 = 1;
+              }
+            }
+            #endif
+            {
+              PyObject *__pyx_callargs[2] = {__pyx_t_11, __pyx_v_path};
+              __pyx_t_10 = __Pyx_PyObject_FastCall(__pyx_t_6, __pyx_callargs+1-__pyx_t_12, 1+__pyx_t_12);
+              __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+              if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 117, __pyx_L40_error)
+              __Pyx_GOTREF(__pyx_t_10);
+              __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+            }
+            __pyx_t_21 = __Pyx_PyObject_IsTrue(__pyx_t_10); if (unlikely((__pyx_t_21 < 0))) __PYX_ERR(0, 117, __pyx_L40_error)
+            __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
+            if (__pyx_t_21) {
+
+              /* "docgen/utils/_machine_utils.pyx":118
+ *                         '/sys/class/dmi/id/board_serial']:
+ *                 if os.path.exists(path):
+ *                     with open(path, 'r') as f:             # <<<<<<<<<<<<<<
+ *                         content = f.read().strip()
+ *                         if content and content != '0000000000':
+ */
+              /*with:*/ {
+                __pyx_t_10 = PyTuple_New(2); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 118, __pyx_L40_error)
+                __Pyx_GOTREF(__pyx_t_10);
+                __Pyx_INCREF(__pyx_v_path);
+                __Pyx_GIVEREF(__pyx_v_path);
+                if (__Pyx_PyTuple_SET_ITEM(__pyx_t_10, 0, __pyx_v_path)) __PYX_ERR(0, 118, __pyx_L40_error);
+                __Pyx_INCREF(__pyx_n_u_r);
+                __Pyx_GIVEREF(__pyx_n_u_r);
+                if (__Pyx_PyTuple_SET_ITEM(__pyx_t_10, 1, __pyx_n_u_r)) __PYX_ERR(0, 118, __pyx_L40_error);
+                __pyx_t_6 = __Pyx_PyObject_Call(__pyx_builtin_open, __pyx_t_10, NULL); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 118, __pyx_L40_error)
+                __Pyx_GOTREF(__pyx_t_6);
+                __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
+                __pyx_t_14 = __Pyx_PyObject_LookupSpecial(__pyx_t_6, __pyx_n_s_exit); if (unlikely(!__pyx_t_14)) __PYX_ERR(0, 118, __pyx_L40_error)
+                __Pyx_GOTREF(__pyx_t_14);
+                __pyx_t_11 = __Pyx_PyObject_LookupSpecial(__pyx_t_6, __pyx_n_s_enter); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 118, __pyx_L49_error)
+                __Pyx_GOTREF(__pyx_t_11);
+                __pyx_t_15 = NULL;
+                __pyx_t_12 = 0;
+                #if CYTHON_UNPACK_METHODS
+                if (likely(PyMethod_Check(__pyx_t_11))) {
+                  __pyx_t_15 = PyMethod_GET_SELF(__pyx_t_11);
+                  if (likely(__pyx_t_15)) {
+                    PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_11);
+                    __Pyx_INCREF(__pyx_t_15);
+                    __Pyx_INCREF(function);
+                    __Pyx_DECREF_SET(__pyx_t_11, function);
+                    __pyx_t_12 = 1;
+                  }
+                }
+                #endif
+                {
+                  PyObject *__pyx_callargs[2] = {__pyx_t_15, NULL};
+                  __pyx_t_10 = __Pyx_PyObject_FastCall(__pyx_t_11, __pyx_callargs+1-__pyx_t_12, 0+__pyx_t_12);
+                  __Pyx_XDECREF(__pyx_t_15); __pyx_t_15 = 0;
+                  if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 118, __pyx_L49_error)
+                  __Pyx_GOTREF(__pyx_t_10);
+                  __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
+                }
+                __pyx_t_11 = __pyx_t_10;
+                __pyx_t_10 = 0;
+                __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+                /*try:*/ {
+                  {
+                    __Pyx_PyThreadState_declare
+                    __Pyx_PyThreadState_assign
+                    __Pyx_ExceptionSave(&__pyx_t_18, &__pyx_t_17, &__pyx_t_16);
+                    __Pyx_XGOTREF(__pyx_t_18);
+                    __Pyx_XGOTREF(__pyx_t_17);
+                    __Pyx_XGOTREF(__pyx_t_16);
+                    /*try:*/ {
+                      __Pyx_XDECREF_SET(__pyx_v_f, __pyx_t_11);
+                      __pyx_t_11 = 0;
+
+                      /* "docgen/utils/_machine_utils.pyx":119
+ *                 if os.path.exists(path):
+ *                     with open(path, 'r') as f:
+ *                         content = f.read().strip()             # <<<<<<<<<<<<<<
+ *                         if content and content != '0000000000':
+ *                             info.append(content)
+ */
+                      __pyx_t_10 = __Pyx_PyObject_GetAttrStr(__pyx_v_f, __pyx_n_s_read); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 119, __pyx_L55_error)
+                      __Pyx_GOTREF(__pyx_t_10);
+                      __pyx_t_15 = NULL;
+                      __pyx_t_12 = 0;
+                      #if CYTHON_UNPACK_METHODS
+                      if (likely(PyMethod_Check(__pyx_t_10))) {
+                        __pyx_t_15 = PyMethod_GET_SELF(__pyx_t_10);
+                        if (likely(__pyx_t_15)) {
+                          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_10);
+                          __Pyx_INCREF(__pyx_t_15);
+                          __Pyx_INCREF(function);
+                          __Pyx_DECREF_SET(__pyx_t_10, function);
+                          __pyx_t_12 = 1;
+                        }
+                      }
+                      #endif
+                      {
+                        PyObject *__pyx_callargs[2] = {__pyx_t_15, NULL};
+                        __pyx_t_6 = __Pyx_PyObject_FastCall(__pyx_t_10, __pyx_callargs+1-__pyx_t_12, 0+__pyx_t_12);
+                        __Pyx_XDECREF(__pyx_t_15); __pyx_t_15 = 0;
+                        if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 119, __pyx_L55_error)
+                        __Pyx_GOTREF(__pyx_t_6);
+                        __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
+                      }
+                      __pyx_t_10 = __Pyx_PyObject_GetAttrStr(__pyx_t_6, __pyx_n_s_strip); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 119, __pyx_L55_error)
+                      __Pyx_GOTREF(__pyx_t_10);
+                      __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+                      __pyx_t_6 = NULL;
+                      __pyx_t_12 = 0;
+                      #if CYTHON_UNPACK_METHODS
+                      if (likely(PyMethod_Check(__pyx_t_10))) {
+                        __pyx_t_6 = PyMethod_GET_SELF(__pyx_t_10);
+                        if (likely(__pyx_t_6)) {
+                          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_10);
+                          __Pyx_INCREF(__pyx_t_6);
+                          __Pyx_INCREF(function);
+                          __Pyx_DECREF_SET(__pyx_t_10, function);
+                          __pyx_t_12 = 1;
+                        }
+                      }
+                      #endif
+                      {
+                        PyObject *__pyx_callargs[2] = {__pyx_t_6, NULL};
+                        __pyx_t_11 = __Pyx_PyObject_FastCall(__pyx_t_10, __pyx_callargs+1-__pyx_t_12, 0+__pyx_t_12);
+                        __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+                        if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 119, __pyx_L55_error)
+                        __Pyx_GOTREF(__pyx_t_11);
+                        __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
+                      }
+                      __Pyx_XDECREF_SET(__pyx_v_content, __pyx_t_11);
+                      __pyx_t_11 = 0;
+
+                      /* "docgen/utils/_machine_utils.pyx":120
+ *                     with open(path, 'r') as f:
+ *                         content = f.read().strip()
+ *                         if content and content != '0000000000':             # <<<<<<<<<<<<<<
+ *                             info.append(content)
+ *         except:
+ */
+                      __pyx_t_13 = __Pyx_PyObject_IsTrue(__pyx_v_content); if (unlikely((__pyx_t_13 < 0))) __PYX_ERR(0, 120, __pyx_L55_error)
+                      if (__pyx_t_13) {
+                      } else {
+                        __pyx_t_21 = __pyx_t_13;
+                        goto __pyx_L64_bool_binop_done;
+                      }
+                      __pyx_t_13 = (__Pyx_PyUnicode_Equals(__pyx_v_content, __pyx_kp_u_0000000000, Py_NE)); if (unlikely((__pyx_t_13 < 0))) __PYX_ERR(0, 120, __pyx_L55_error)
+                      __pyx_t_21 = __pyx_t_13;
+                      __pyx_L64_bool_binop_done:;
+                      if (__pyx_t_21) {
+
+                        /* "docgen/utils/_machine_utils.pyx":121
+ *                         content = f.read().strip()
+ *                         if content and content != '0000000000':
+ *                             info.append(content)             # <<<<<<<<<<<<<<
+ *         except:
+ *             pass
+ */
+                        __pyx_t_19 = __Pyx_PyList_Append(__pyx_v_info, __pyx_v_content); if (unlikely(__pyx_t_19 == ((int)-1))) __PYX_ERR(0, 121, __pyx_L55_error)
+
+                        /* "docgen/utils/_machine_utils.pyx":120
+ *                     with open(path, 'r') as f:
+ *                         content = f.read().strip()
+ *                         if content and content != '0000000000':             # <<<<<<<<<<<<<<
+ *                             info.append(content)
+ *         except:
+ */
+                      }
+
+                      /* "docgen/utils/_machine_utils.pyx":118
+ *                         '/sys/class/dmi/id/board_serial']:
+ *                 if os.path.exists(path):
+ *                     with open(path, 'r') as f:             # <<<<<<<<<<<<<<
+ *                         content = f.read().strip()
+ *                         if content and content != '0000000000':
+ */
+                    }
+                    __Pyx_XDECREF(__pyx_t_18); __pyx_t_18 = 0;
+                    __Pyx_XDECREF(__pyx_t_17); __pyx_t_17 = 0;
+                    __Pyx_XDECREF(__pyx_t_16); __pyx_t_16 = 0;
+                    goto __pyx_L62_try_end;
+                    __pyx_L55_error:;
+                    __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
+                    __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+                    __Pyx_XDECREF(__pyx_t_15); __pyx_t_15 = 0;
+                    __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+                    /*except:*/ {
+                      __Pyx_AddTraceback("docgen.utils._machine_utils._get_linux_info", __pyx_clineno, __pyx_lineno, __pyx_filename);
+                      if (__Pyx_GetException(&__pyx_t_11, &__pyx_t_10, &__pyx_t_6) < 0) __PYX_ERR(0, 118, __pyx_L57_except_error)
+                      __Pyx_XGOTREF(__pyx_t_11);
+                      __Pyx_XGOTREF(__pyx_t_10);
+                      __Pyx_XGOTREF(__pyx_t_6);
+                      __pyx_t_15 = PyTuple_Pack(3, __pyx_t_11, __pyx_t_10, __pyx_t_6); if (unlikely(!__pyx_t_15)) __PYX_ERR(0, 118, __pyx_L57_except_error)
+                      __Pyx_GOTREF(__pyx_t_15);
+                      __pyx_t_20 = __Pyx_PyObject_Call(__pyx_t_14, __pyx_t_15, NULL);
+                      __Pyx_DECREF(__pyx_t_14); __pyx_t_14 = 0;
+                      __Pyx_DECREF(__pyx_t_15); __pyx_t_15 = 0;
+                      if (unlikely(!__pyx_t_20)) __PYX_ERR(0, 118, __pyx_L57_except_error)
+                      __Pyx_GOTREF(__pyx_t_20);
+                      __pyx_t_21 = __Pyx_PyObject_IsTrue(__pyx_t_20);
+                      __Pyx_DECREF(__pyx_t_20); __pyx_t_20 = 0;
+                      if (__pyx_t_21 < 0) __PYX_ERR(0, 118, __pyx_L57_except_error)
+                      __pyx_t_13 = (!__pyx_t_21);
+                      if (unlikely(__pyx_t_13)) {
+                        __Pyx_GIVEREF(__pyx_t_11);
+                        __Pyx_GIVEREF(__pyx_t_10);
+                        __Pyx_XGIVEREF(__pyx_t_6);
+                        __Pyx_ErrRestoreWithState(__pyx_t_11, __pyx_t_10, __pyx_t_6);
+                        __pyx_t_11 = 0; __pyx_t_10 = 0; __pyx_t_6 = 0; 
+                        __PYX_ERR(0, 118, __pyx_L57_except_error)
+                      }
+                      __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+                      __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
+                      __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+                      goto __pyx_L56_exception_handled;
+                    }
+                    __pyx_L57_except_error:;
+                    __Pyx_XGIVEREF(__pyx_t_18);
+                    __Pyx_XGIVEREF(__pyx_t_17);
+                    __Pyx_XGIVEREF(__pyx_t_16);
+                    __Pyx_ExceptionReset(__pyx_t_18, __pyx_t_17, __pyx_t_16);
+                    goto __pyx_L40_error;
+                    __pyx_L56_exception_handled:;
+                    __Pyx_XGIVEREF(__pyx_t_18);
+                    __Pyx_XGIVEREF(__pyx_t_17);
+                    __Pyx_XGIVEREF(__pyx_t_16);
+                    __Pyx_ExceptionReset(__pyx_t_18, __pyx_t_17, __pyx_t_16);
+                    __pyx_L62_try_end:;
+                  }
+                }
+                /*finally:*/ {
+                  /*normal exit:*/{
+                    if (__pyx_t_14) {
+                      __pyx_t_16 = __Pyx_PyObject_Call(__pyx_t_14, __pyx_tuple__6, NULL);
+                      __Pyx_DECREF(__pyx_t_14); __pyx_t_14 = 0;
+                      if (unlikely(!__pyx_t_16)) __PYX_ERR(0, 118, __pyx_L40_error)
+                      __Pyx_GOTREF(__pyx_t_16);
+                      __Pyx_DECREF(__pyx_t_16); __pyx_t_16 = 0;
+                    }
+                    goto __pyx_L54;
+                  }
+                  __pyx_L54:;
+                }
+                goto __pyx_L69;
+                __pyx_L49_error:;
+                __Pyx_DECREF(__pyx_t_14); __pyx_t_14 = 0;
+                goto __pyx_L40_error;
+                __pyx_L69:;
+              }
+
+              /* "docgen/utils/_machine_utils.pyx":117
+ *             for path in ['/sys/class/dmi/id/product_uuid',
+ *                         '/sys/class/dmi/id/board_serial']:
+ *                 if os.path.exists(path):             # <<<<<<<<<<<<<<
+ *                     with open(path, 'r') as f:
+ *                         content = f.read().strip()
+ */
+            }
+
+            /* "docgen/utils/_machine_utils.pyx":115
+ *         # Try DMI system information
+ *         try:
+ *             for path in ['/sys/class/dmi/id/product_uuid',             # <<<<<<<<<<<<<<
+ *                         '/sys/class/dmi/id/board_serial']:
+ *                 if os.path.exists(path):
+ */
+          }
+          __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+
+          /* "docgen/utils/_machine_utils.pyx":114
+ * 
+ *         # Try DMI system information
+ *         try:             # <<<<<<<<<<<<<<
+ *             for path in ['/sys/class/dmi/id/product_uuid',
+ *                         '/sys/class/dmi/id/board_serial']:
+ */
+        }
+        __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
+        __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
+        __Pyx_XDECREF(__pyx_t_7); __pyx_t_7 = 0;
+        goto __pyx_L45_try_end;
+        __pyx_L40_error:;
+        __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
+        __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+        __Pyx_XDECREF(__pyx_t_15); __pyx_t_15 = 0;
+        __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
+        __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+
+        /* "docgen/utils/_machine_utils.pyx":122
+ *                         if content and content != '0000000000':
+ *                             info.append(content)
+ *         except:             # <<<<<<<<<<<<<<
+ *             pass
+ * 
+ */
+        /*except:*/ {
+          __Pyx_ErrRestore(0,0,0);
+          goto __pyx_L41_exception_handled;
+        }
+        __pyx_L41_exception_handled:;
+        __Pyx_XGIVEREF(__pyx_t_9);
+        __Pyx_XGIVEREF(__pyx_t_8);
+        __Pyx_XGIVEREF(__pyx_t_7);
+        __Pyx_ExceptionReset(__pyx_t_9, __pyx_t_8, __pyx_t_7);
+        __pyx_L45_try_end:;
+      }
+
+      /* "docgen/utils/_machine_utils.pyx":125
+ *             pass
+ * 
+ *         return info             # <<<<<<<<<<<<<<
+ *     except:
+ *         return []
+ */
+      __Pyx_XDECREF(__pyx_r);
+      __Pyx_INCREF(__pyx_v_info);
+      __pyx_r = __pyx_v_info;
+      goto __pyx_L7_try_return;
+
+      /* "docgen/utils/_machine_utils.pyx":99
+ * cdef list _get_linux_info():
+ *     """Get stable Linux-specific identifiers."""
+ *     try:             # <<<<<<<<<<<<<<
+ *         info = []
+ * 
+ */
+    }
+    __pyx_L3_error:;
+    __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
+    __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+    __Pyx_XDECREF(__pyx_t_15); __pyx_t_15 = 0;
+    __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
+    __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+
+    /* "docgen/utils/_machine_utils.pyx":126
+ * 
+ *         return info
+ *     except:             # <<<<<<<<<<<<<<
+ *         return []
+ * 
+ */
+    /*except:*/ {
+      __Pyx_AddTraceback("docgen.utils._machine_utils._get_linux_info", __pyx_clineno, __pyx_lineno, __pyx_filename);
+      if (__Pyx_GetException(&__pyx_t_4, &__pyx_t_6, &__pyx_t_10) < 0) __PYX_ERR(0, 126, __pyx_L5_except_error)
+      __Pyx_XGOTREF(__pyx_t_4);
+      __Pyx_XGOTREF(__pyx_t_6);
+      __Pyx_XGOTREF(__pyx_t_10);
+
+      /* "docgen/utils/_machine_utils.pyx":127
+ *         return info
+ *     except:
+ *         return []             # <<<<<<<<<<<<<<
+ * 
+ * cdef str _get_cached_machine_id():
+ */
+      __Pyx_XDECREF(__pyx_r);
+      __pyx_t_11 = PyList_New(0); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 127, __pyx_L5_except_error)
+      __Pyx_GOTREF(__pyx_t_11);
+      __pyx_r = ((PyObject*)__pyx_t_11);
+      __pyx_t_11 = 0;
+      __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+      __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+      __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
+      goto __pyx_L6_except_return;
+    }
+
+    /* "docgen/utils/_machine_utils.pyx":99
+ * cdef list _get_linux_info():
+ *     """Get stable Linux-specific identifiers."""
+ *     try:             # <<<<<<<<<<<<<<
+ *         info = []
+ * 
+ */
+    __pyx_L5_except_error:;
+    __Pyx_XGIVEREF(__pyx_t_1);
+    __Pyx_XGIVEREF(__pyx_t_2);
+    __Pyx_XGIVEREF(__pyx_t_3);
+    __Pyx_ExceptionReset(__pyx_t_1, __pyx_t_2, __pyx_t_3);
+    goto __pyx_L1_error;
+    __pyx_L7_try_return:;
+    __Pyx_XGIVEREF(__pyx_t_1);
+    __Pyx_XGIVEREF(__pyx_t_2);
+    __Pyx_XGIVEREF(__pyx_t_3);
+    __Pyx_ExceptionReset(__pyx_t_1, __pyx_t_2, __pyx_t_3);
+    goto __pyx_L0;
+    __pyx_L6_except_return:;
+    __Pyx_XGIVEREF(__pyx_t_1);
+    __Pyx_XGIVEREF(__pyx_t_2);
+    __Pyx_XGIVEREF(__pyx_t_3);
+    __Pyx_ExceptionReset(__pyx_t_1, __pyx_t_2, __pyx_t_3);
+    goto __pyx_L0;
+  }
+
+  /* "docgen/utils/_machine_utils.pyx":97
+ *         return []
+ * 
+ * cdef list _get_linux_info():             # <<<<<<<<<<<<<<
+ *     """Get stable Linux-specific identifiers."""
+ *     try:
+ */
+
+  /* function exit code */
+  __pyx_L1_error:;
+  __Pyx_XDECREF(__pyx_t_4);
+  __Pyx_XDECREF(__pyx_t_6);
+  __Pyx_XDECREF(__pyx_t_10);
+  __Pyx_XDECREF(__pyx_t_11);
+  __Pyx_XDECREF(__pyx_t_15);
+  __Pyx_AddTraceback("docgen.utils._machine_utils._get_linux_info", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __pyx_r = 0;
+  __pyx_L0:;
+  __Pyx_XDECREF(__pyx_v_info);
+  __Pyx_XDECREF(__pyx_v_path);
+  __Pyx_XDECREF(__pyx_v_f);
+  __Pyx_XDECREF(__pyx_v_content);
+  __Pyx_XGIVEREF(__pyx_r);
+  __Pyx_RefNannyFinishContext();
+  return __pyx_r;
+}
+
+/* "docgen/utils/_machine_utils.pyx":129
+ *         return []
+ * 
+ * cdef str _get_cached_machine_id():             # <<<<<<<<<<<<<<
+ *     """Get machine ID from cache file."""
+ *     try:
+ */
+
+static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_cached_machine_id(void) {
+  PyObject *__pyx_v_cache_dir = NULL;
+  PyObject *__pyx_v_cache_file = NULL;
   PyObject *__pyx_v_f = NULL;
   PyObject *__pyx_r = NULL;
   __Pyx_RefNannyDeclarations
@@ -3161,586 +5385,19 @@ static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_disk_id(void) {
   PyObject *__pyx_t_12 = NULL;
   PyObject *__pyx_t_13 = NULL;
   PyObject *__pyx_t_14 = NULL;
-  PyObject *__pyx_t_15 = NULL;
-  int __pyx_t_16;
-  PyObject *__pyx_t_17 = NULL;
-  int __pyx_lineno = 0;
-  const char *__pyx_filename = NULL;
-  int __pyx_clineno = 0;
-  __Pyx_RefNannySetupContext("_get_disk_id", 1);
-
-  /* "docgen/utils/_machine_utils.pyx":31
- * cdef str _get_disk_id():
- *     """Get disk identifier based on OS."""
- *     try:             # <<<<<<<<<<<<<<
- *         if platform.system() == 'Windows':
- *             import win32api
- */
-  {
-    __Pyx_PyThreadState_declare
-    __Pyx_PyThreadState_assign
-    __Pyx_ExceptionSave(&__pyx_t_1, &__pyx_t_2, &__pyx_t_3);
-    __Pyx_XGOTREF(__pyx_t_1);
-    __Pyx_XGOTREF(__pyx_t_2);
-    __Pyx_XGOTREF(__pyx_t_3);
-    /*try:*/ {
-
-      /* "docgen/utils/_machine_utils.pyx":32
- *     """Get disk identifier based on OS."""
- *     try:
- *         if platform.system() == 'Windows':             # <<<<<<<<<<<<<<
- *             import win32api
- *             drives = win32api.GetLogicalDriveStrings().split('\000')[:-1]
- */
-      __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_n_s_platform); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 32, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_5);
-      __pyx_t_6 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_system); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 32, __pyx_L3_error)
-      __Pyx_GOTREF(__pyx_t_6);
-      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      __pyx_t_5 = NULL;
-      __pyx_t_7 = 0;
-      #if CYTHON_UNPACK_METHODS
-      if (unlikely(PyMethod_Check(__pyx_t_6))) {
-        __pyx_t_5 = PyMethod_GET_SELF(__pyx_t_6);
-        if (likely(__pyx_t_5)) {
-          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_6);
-          __Pyx_INCREF(__pyx_t_5);
-          __Pyx_INCREF(function);
-          __Pyx_DECREF_SET(__pyx_t_6, function);
-          __pyx_t_7 = 1;
-        }
-      }
-      #endif
-      {
-        PyObject *__pyx_callargs[2] = {__pyx_t_5, NULL};
-        __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_6, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-        __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 32, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_4);
-        __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
-      }
-      __pyx_t_8 = (__Pyx_PyUnicode_Equals(__pyx_t_4, __pyx_n_u_Windows, Py_EQ)); if (unlikely((__pyx_t_8 < 0))) __PYX_ERR(0, 32, __pyx_L3_error)
-      __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-      if (__pyx_t_8) {
-
-        /* "docgen/utils/_machine_utils.pyx":33
- *     try:
- *         if platform.system() == 'Windows':
- *             import win32api             # <<<<<<<<<<<<<<
- *             drives = win32api.GetLogicalDriveStrings().split('\000')[:-1]
- *             return hashlib.sha256(str(drives[0]).encode()).hexdigest()
- */
-        __pyx_t_4 = __Pyx_ImportDottedModule(__pyx_n_s_win32api, NULL); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 33, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_4);
-        __pyx_v_win32api = __pyx_t_4;
-        __pyx_t_4 = 0;
-
-        /* "docgen/utils/_machine_utils.pyx":34
- *         if platform.system() == 'Windows':
- *             import win32api
- *             drives = win32api.GetLogicalDriveStrings().split('\000')[:-1]             # <<<<<<<<<<<<<<
- *             return hashlib.sha256(str(drives[0]).encode()).hexdigest()
- *         else:
- */
-        __pyx_t_5 = __Pyx_PyObject_GetAttrStr(__pyx_v_win32api, __pyx_n_s_GetLogicalDriveStrings); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 34, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_5);
-        __pyx_t_9 = NULL;
-        __pyx_t_7 = 0;
-        #if CYTHON_UNPACK_METHODS
-        if (likely(PyMethod_Check(__pyx_t_5))) {
-          __pyx_t_9 = PyMethod_GET_SELF(__pyx_t_5);
-          if (likely(__pyx_t_9)) {
-            PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_5);
-            __Pyx_INCREF(__pyx_t_9);
-            __Pyx_INCREF(function);
-            __Pyx_DECREF_SET(__pyx_t_5, function);
-            __pyx_t_7 = 1;
-          }
-        }
-        #endif
-        {
-          PyObject *__pyx_callargs[2] = {__pyx_t_9, NULL};
-          __pyx_t_6 = __Pyx_PyObject_FastCall(__pyx_t_5, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-          __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
-          if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 34, __pyx_L3_error)
-          __Pyx_GOTREF(__pyx_t_6);
-          __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-        }
-        __pyx_t_5 = __Pyx_PyObject_GetAttrStr(__pyx_t_6, __pyx_n_s_split); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 34, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_5);
-        __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
-        __pyx_t_6 = NULL;
-        __pyx_t_7 = 0;
-        #if CYTHON_UNPACK_METHODS
-        if (likely(PyMethod_Check(__pyx_t_5))) {
-          __pyx_t_6 = PyMethod_GET_SELF(__pyx_t_5);
-          if (likely(__pyx_t_6)) {
-            PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_5);
-            __Pyx_INCREF(__pyx_t_6);
-            __Pyx_INCREF(function);
-            __Pyx_DECREF_SET(__pyx_t_5, function);
-            __pyx_t_7 = 1;
-          }
-        }
-        #endif
-        {
-          PyObject *__pyx_callargs[2] = {__pyx_t_6, __pyx_kp_u__3};
-          __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_5, __pyx_callargs+1-__pyx_t_7, 1+__pyx_t_7);
-          __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
-          if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 34, __pyx_L3_error)
-          __Pyx_GOTREF(__pyx_t_4);
-          __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-        }
-        __pyx_t_5 = __Pyx_PyObject_GetSlice(__pyx_t_4, 0, -1L, NULL, NULL, &__pyx_slice__4, 0, 1, 1); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 34, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_5);
-        __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-        __pyx_v_drives = __pyx_t_5;
-        __pyx_t_5 = 0;
-
-        /* "docgen/utils/_machine_utils.pyx":35
- *             import win32api
- *             drives = win32api.GetLogicalDriveStrings().split('\000')[:-1]
- *             return hashlib.sha256(str(drives[0]).encode()).hexdigest()             # <<<<<<<<<<<<<<
- *         else:
- *             with open('/etc/machine-id', 'r') as f:
- */
-        __Pyx_XDECREF(__pyx_r);
-        __Pyx_GetModuleGlobalName(__pyx_t_6, __pyx_n_s_hashlib); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 35, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_6);
-        __pyx_t_9 = __Pyx_PyObject_GetAttrStr(__pyx_t_6, __pyx_n_s_sha256); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 35, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_9);
-        __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
-        __pyx_t_6 = __Pyx_GetItemInt(__pyx_v_drives, 0, long, 1, __Pyx_PyInt_From_long, 0, 0, 1); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 35, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_6);
-        __pyx_t_10 = __Pyx_PyObject_Unicode(__pyx_t_6); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 35, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_10);
-        __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
-        __pyx_t_6 = PyUnicode_AsEncodedString(((PyObject*)__pyx_t_10), NULL, NULL); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 35, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_6);
-        __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
-        __pyx_t_10 = NULL;
-        __pyx_t_7 = 0;
-        #if CYTHON_UNPACK_METHODS
-        if (unlikely(PyMethod_Check(__pyx_t_9))) {
-          __pyx_t_10 = PyMethod_GET_SELF(__pyx_t_9);
-          if (likely(__pyx_t_10)) {
-            PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_9);
-            __Pyx_INCREF(__pyx_t_10);
-            __Pyx_INCREF(function);
-            __Pyx_DECREF_SET(__pyx_t_9, function);
-            __pyx_t_7 = 1;
-          }
-        }
-        #endif
-        {
-          PyObject *__pyx_callargs[2] = {__pyx_t_10, __pyx_t_6};
-          __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_9, __pyx_callargs+1-__pyx_t_7, 1+__pyx_t_7);
-          __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
-          __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
-          if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 35, __pyx_L3_error)
-          __Pyx_GOTREF(__pyx_t_4);
-          __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
-        }
-        __pyx_t_9 = __Pyx_PyObject_GetAttrStr(__pyx_t_4, __pyx_n_s_hexdigest); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 35, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_9);
-        __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-        __pyx_t_4 = NULL;
-        __pyx_t_7 = 0;
-        #if CYTHON_UNPACK_METHODS
-        if (likely(PyMethod_Check(__pyx_t_9))) {
-          __pyx_t_4 = PyMethod_GET_SELF(__pyx_t_9);
-          if (likely(__pyx_t_4)) {
-            PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_9);
-            __Pyx_INCREF(__pyx_t_4);
-            __Pyx_INCREF(function);
-            __Pyx_DECREF_SET(__pyx_t_9, function);
-            __pyx_t_7 = 1;
-          }
-        }
-        #endif
-        {
-          PyObject *__pyx_callargs[2] = {__pyx_t_4, NULL};
-          __pyx_t_5 = __Pyx_PyObject_FastCall(__pyx_t_9, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-          __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-          if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 35, __pyx_L3_error)
-          __Pyx_GOTREF(__pyx_t_5);
-          __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
-        }
-        if (!(likely(PyUnicode_CheckExact(__pyx_t_5))||((__pyx_t_5) == Py_None) || __Pyx_RaiseUnexpectedTypeError("unicode", __pyx_t_5))) __PYX_ERR(0, 35, __pyx_L3_error)
-        __pyx_r = ((PyObject*)__pyx_t_5);
-        __pyx_t_5 = 0;
-        goto __pyx_L7_try_return;
-
-        /* "docgen/utils/_machine_utils.pyx":32
- *     """Get disk identifier based on OS."""
- *     try:
- *         if platform.system() == 'Windows':             # <<<<<<<<<<<<<<
- *             import win32api
- *             drives = win32api.GetLogicalDriveStrings().split('\000')[:-1]
- */
-      }
-
-      /* "docgen/utils/_machine_utils.pyx":37
- *             return hashlib.sha256(str(drives[0]).encode()).hexdigest()
- *         else:
- *             with open('/etc/machine-id', 'r') as f:             # <<<<<<<<<<<<<<
- *                 return f.read().strip()
- *     except:
- */
-      /*else*/ {
-        /*with:*/ {
-          __pyx_t_5 = __Pyx_PyObject_Call(__pyx_builtin_open, __pyx_tuple__5, NULL); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 37, __pyx_L3_error)
-          __Pyx_GOTREF(__pyx_t_5);
-          __pyx_t_11 = __Pyx_PyObject_LookupSpecial(__pyx_t_5, __pyx_n_s_exit); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 37, __pyx_L3_error)
-          __Pyx_GOTREF(__pyx_t_11);
-          __pyx_t_4 = __Pyx_PyObject_LookupSpecial(__pyx_t_5, __pyx_n_s_enter); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 37, __pyx_L10_error)
-          __Pyx_GOTREF(__pyx_t_4);
-          __pyx_t_6 = NULL;
-          __pyx_t_7 = 0;
-          #if CYTHON_UNPACK_METHODS
-          if (likely(PyMethod_Check(__pyx_t_4))) {
-            __pyx_t_6 = PyMethod_GET_SELF(__pyx_t_4);
-            if (likely(__pyx_t_6)) {
-              PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_4);
-              __Pyx_INCREF(__pyx_t_6);
-              __Pyx_INCREF(function);
-              __Pyx_DECREF_SET(__pyx_t_4, function);
-              __pyx_t_7 = 1;
-            }
-          }
-          #endif
-          {
-            PyObject *__pyx_callargs[2] = {__pyx_t_6, NULL};
-            __pyx_t_9 = __Pyx_PyObject_FastCall(__pyx_t_4, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-            __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
-            if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 37, __pyx_L10_error)
-            __Pyx_GOTREF(__pyx_t_9);
-            __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-          }
-          __pyx_t_4 = __pyx_t_9;
-          __pyx_t_9 = 0;
-          __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-          /*try:*/ {
-            {
-              __Pyx_PyThreadState_declare
-              __Pyx_PyThreadState_assign
-              __Pyx_ExceptionSave(&__pyx_t_12, &__pyx_t_13, &__pyx_t_14);
-              __Pyx_XGOTREF(__pyx_t_12);
-              __Pyx_XGOTREF(__pyx_t_13);
-              __Pyx_XGOTREF(__pyx_t_14);
-              /*try:*/ {
-                __pyx_v_f = __pyx_t_4;
-                __pyx_t_4 = 0;
-
-                /* "docgen/utils/_machine_utils.pyx":38
- *         else:
- *             with open('/etc/machine-id', 'r') as f:
- *                 return f.read().strip()             # <<<<<<<<<<<<<<
- *     except:
- *         return ""
- */
-                __Pyx_XDECREF(__pyx_r);
-                __pyx_t_9 = __Pyx_PyObject_GetAttrStr(__pyx_v_f, __pyx_n_s_read); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 38, __pyx_L14_error)
-                __Pyx_GOTREF(__pyx_t_9);
-                __pyx_t_6 = NULL;
-                __pyx_t_7 = 0;
-                #if CYTHON_UNPACK_METHODS
-                if (likely(PyMethod_Check(__pyx_t_9))) {
-                  __pyx_t_6 = PyMethod_GET_SELF(__pyx_t_9);
-                  if (likely(__pyx_t_6)) {
-                    PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_9);
-                    __Pyx_INCREF(__pyx_t_6);
-                    __Pyx_INCREF(function);
-                    __Pyx_DECREF_SET(__pyx_t_9, function);
-                    __pyx_t_7 = 1;
-                  }
-                }
-                #endif
-                {
-                  PyObject *__pyx_callargs[2] = {__pyx_t_6, NULL};
-                  __pyx_t_5 = __Pyx_PyObject_FastCall(__pyx_t_9, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-                  __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
-                  if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 38, __pyx_L14_error)
-                  __Pyx_GOTREF(__pyx_t_5);
-                  __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
-                }
-                __pyx_t_9 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_strip); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 38, __pyx_L14_error)
-                __Pyx_GOTREF(__pyx_t_9);
-                __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-                __pyx_t_5 = NULL;
-                __pyx_t_7 = 0;
-                #if CYTHON_UNPACK_METHODS
-                if (likely(PyMethod_Check(__pyx_t_9))) {
-                  __pyx_t_5 = PyMethod_GET_SELF(__pyx_t_9);
-                  if (likely(__pyx_t_5)) {
-                    PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_9);
-                    __Pyx_INCREF(__pyx_t_5);
-                    __Pyx_INCREF(function);
-                    __Pyx_DECREF_SET(__pyx_t_9, function);
-                    __pyx_t_7 = 1;
-                  }
-                }
-                #endif
-                {
-                  PyObject *__pyx_callargs[2] = {__pyx_t_5, NULL};
-                  __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_9, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-                  __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-                  if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 38, __pyx_L14_error)
-                  __Pyx_GOTREF(__pyx_t_4);
-                  __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
-                }
-                if (!(likely(PyUnicode_CheckExact(__pyx_t_4))||((__pyx_t_4) == Py_None) || __Pyx_RaiseUnexpectedTypeError("unicode", __pyx_t_4))) __PYX_ERR(0, 38, __pyx_L14_error)
-                __pyx_r = ((PyObject*)__pyx_t_4);
-                __pyx_t_4 = 0;
-                goto __pyx_L18_try_return;
-
-                /* "docgen/utils/_machine_utils.pyx":37
- *             return hashlib.sha256(str(drives[0]).encode()).hexdigest()
- *         else:
- *             with open('/etc/machine-id', 'r') as f:             # <<<<<<<<<<<<<<
- *                 return f.read().strip()
- *     except:
- */
-              }
-              __pyx_L14_error:;
-              __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
-              __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-              __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-              __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
-              __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
-              /*except:*/ {
-                __Pyx_AddTraceback("docgen.utils._machine_utils._get_disk_id", __pyx_clineno, __pyx_lineno, __pyx_filename);
-                if (__Pyx_GetException(&__pyx_t_4, &__pyx_t_9, &__pyx_t_5) < 0) __PYX_ERR(0, 37, __pyx_L16_except_error)
-                __Pyx_XGOTREF(__pyx_t_4);
-                __Pyx_XGOTREF(__pyx_t_9);
-                __Pyx_XGOTREF(__pyx_t_5);
-                __pyx_t_6 = PyTuple_Pack(3, __pyx_t_4, __pyx_t_9, __pyx_t_5); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 37, __pyx_L16_except_error)
-                __Pyx_GOTREF(__pyx_t_6);
-                __pyx_t_15 = __Pyx_PyObject_Call(__pyx_t_11, __pyx_t_6, NULL);
-                __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
-                __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
-                if (unlikely(!__pyx_t_15)) __PYX_ERR(0, 37, __pyx_L16_except_error)
-                __Pyx_GOTREF(__pyx_t_15);
-                __pyx_t_8 = __Pyx_PyObject_IsTrue(__pyx_t_15);
-                __Pyx_DECREF(__pyx_t_15); __pyx_t_15 = 0;
-                if (__pyx_t_8 < 0) __PYX_ERR(0, 37, __pyx_L16_except_error)
-                __pyx_t_16 = (!__pyx_t_8);
-                if (unlikely(__pyx_t_16)) {
-                  __Pyx_GIVEREF(__pyx_t_4);
-                  __Pyx_GIVEREF(__pyx_t_9);
-                  __Pyx_XGIVEREF(__pyx_t_5);
-                  __Pyx_ErrRestoreWithState(__pyx_t_4, __pyx_t_9, __pyx_t_5);
-                  __pyx_t_4 = 0; __pyx_t_9 = 0; __pyx_t_5 = 0; 
-                  __PYX_ERR(0, 37, __pyx_L16_except_error)
-                }
-                __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-                __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
-                __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-                goto __pyx_L15_exception_handled;
-              }
-              __pyx_L16_except_error:;
-              __Pyx_XGIVEREF(__pyx_t_12);
-              __Pyx_XGIVEREF(__pyx_t_13);
-              __Pyx_XGIVEREF(__pyx_t_14);
-              __Pyx_ExceptionReset(__pyx_t_12, __pyx_t_13, __pyx_t_14);
-              goto __pyx_L3_error;
-              __pyx_L18_try_return:;
-              __Pyx_XGIVEREF(__pyx_t_12);
-              __Pyx_XGIVEREF(__pyx_t_13);
-              __Pyx_XGIVEREF(__pyx_t_14);
-              __Pyx_ExceptionReset(__pyx_t_12, __pyx_t_13, __pyx_t_14);
-              goto __pyx_L11_return;
-              __pyx_L15_exception_handled:;
-              __Pyx_XGIVEREF(__pyx_t_12);
-              __Pyx_XGIVEREF(__pyx_t_13);
-              __Pyx_XGIVEREF(__pyx_t_14);
-              __Pyx_ExceptionReset(__pyx_t_12, __pyx_t_13, __pyx_t_14);
-            }
-          }
-          /*finally:*/ {
-            /*normal exit:*/{
-              if (__pyx_t_11) {
-                __pyx_t_14 = __Pyx_PyObject_Call(__pyx_t_11, __pyx_tuple__6, NULL);
-                __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
-                if (unlikely(!__pyx_t_14)) __PYX_ERR(0, 37, __pyx_L3_error)
-                __Pyx_GOTREF(__pyx_t_14);
-                __Pyx_DECREF(__pyx_t_14); __pyx_t_14 = 0;
-              }
-              goto __pyx_L13;
-            }
-            __pyx_L11_return: {
-              __pyx_t_17 = __pyx_r;
-              __pyx_r = 0;
-              if (__pyx_t_11) {
-                __pyx_t_14 = __Pyx_PyObject_Call(__pyx_t_11, __pyx_tuple__6, NULL);
-                __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
-                if (unlikely(!__pyx_t_14)) __PYX_ERR(0, 37, __pyx_L3_error)
-                __Pyx_GOTREF(__pyx_t_14);
-                __Pyx_DECREF(__pyx_t_14); __pyx_t_14 = 0;
-              }
-              __pyx_r = __pyx_t_17;
-              __pyx_t_17 = 0;
-              goto __pyx_L7_try_return;
-            }
-            __pyx_L13:;
-          }
-          goto __pyx_L23;
-          __pyx_L10_error:;
-          __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
-          goto __pyx_L3_error;
-          __pyx_L23:;
-        }
-      }
-
-      /* "docgen/utils/_machine_utils.pyx":31
- * cdef str _get_disk_id():
- *     """Get disk identifier based on OS."""
- *     try:             # <<<<<<<<<<<<<<
- *         if platform.system() == 'Windows':
- *             import win32api
- */
-    }
-    __Pyx_XDECREF(__pyx_t_1); __pyx_t_1 = 0;
-    __Pyx_XDECREF(__pyx_t_2); __pyx_t_2 = 0;
-    __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
-    goto __pyx_L8_try_end;
-    __pyx_L3_error:;
-    __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
-    __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-    __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-    __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
-    __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
-
-    /* "docgen/utils/_machine_utils.pyx":39
- *             with open('/etc/machine-id', 'r') as f:
- *                 return f.read().strip()
- *     except:             # <<<<<<<<<<<<<<
- *         return ""
- * 
- */
-    /*except:*/ {
-      __Pyx_AddTraceback("docgen.utils._machine_utils._get_disk_id", __pyx_clineno, __pyx_lineno, __pyx_filename);
-      if (__Pyx_GetException(&__pyx_t_5, &__pyx_t_9, &__pyx_t_4) < 0) __PYX_ERR(0, 39, __pyx_L5_except_error)
-      __Pyx_XGOTREF(__pyx_t_5);
-      __Pyx_XGOTREF(__pyx_t_9);
-      __Pyx_XGOTREF(__pyx_t_4);
-
-      /* "docgen/utils/_machine_utils.pyx":40
- *                 return f.read().strip()
- *     except:
- *         return ""             # <<<<<<<<<<<<<<
- * 
- * cdef str _get_cpu_info():
- */
-      __Pyx_XDECREF(__pyx_r);
-      __Pyx_INCREF(__pyx_kp_u_);
-      __pyx_r = __pyx_kp_u_;
-      __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
-      goto __pyx_L6_except_return;
-    }
-
-    /* "docgen/utils/_machine_utils.pyx":31
- * cdef str _get_disk_id():
- *     """Get disk identifier based on OS."""
- *     try:             # <<<<<<<<<<<<<<
- *         if platform.system() == 'Windows':
- *             import win32api
- */
-    __pyx_L5_except_error:;
-    __Pyx_XGIVEREF(__pyx_t_1);
-    __Pyx_XGIVEREF(__pyx_t_2);
-    __Pyx_XGIVEREF(__pyx_t_3);
-    __Pyx_ExceptionReset(__pyx_t_1, __pyx_t_2, __pyx_t_3);
-    goto __pyx_L1_error;
-    __pyx_L7_try_return:;
-    __Pyx_XGIVEREF(__pyx_t_1);
-    __Pyx_XGIVEREF(__pyx_t_2);
-    __Pyx_XGIVEREF(__pyx_t_3);
-    __Pyx_ExceptionReset(__pyx_t_1, __pyx_t_2, __pyx_t_3);
-    goto __pyx_L0;
-    __pyx_L6_except_return:;
-    __Pyx_XGIVEREF(__pyx_t_1);
-    __Pyx_XGIVEREF(__pyx_t_2);
-    __Pyx_XGIVEREF(__pyx_t_3);
-    __Pyx_ExceptionReset(__pyx_t_1, __pyx_t_2, __pyx_t_3);
-    goto __pyx_L0;
-    __pyx_L8_try_end:;
-  }
-
-  /* "docgen/utils/_machine_utils.pyx":29
- *         return hashlib.sha256(str(uuid.getnode()).encode()).hexdigest()
- * 
- * cdef str _get_disk_id():             # <<<<<<<<<<<<<<
- *     """Get disk identifier based on OS."""
- *     try:
- */
-
-  /* function exit code */
-  __pyx_r = ((PyObject*)Py_None); __Pyx_INCREF(Py_None);
-  goto __pyx_L0;
-  __pyx_L1_error:;
-  __Pyx_XDECREF(__pyx_t_4);
-  __Pyx_XDECREF(__pyx_t_5);
-  __Pyx_XDECREF(__pyx_t_6);
-  __Pyx_XDECREF(__pyx_t_9);
-  __Pyx_XDECREF(__pyx_t_10);
-  __Pyx_AddTraceback("docgen.utils._machine_utils._get_disk_id", __pyx_clineno, __pyx_lineno, __pyx_filename);
-  __pyx_r = 0;
-  __pyx_L0:;
-  __Pyx_XDECREF(__pyx_v_win32api);
-  __Pyx_XDECREF(__pyx_v_drives);
-  __Pyx_XDECREF(__pyx_v_f);
-  __Pyx_XGIVEREF(__pyx_r);
-  __Pyx_RefNannyFinishContext();
-  return __pyx_r;
-}
-
-/* "docgen/utils/_machine_utils.pyx":42
- *         return ""
- * 
- * cdef str _get_cpu_info():             # <<<<<<<<<<<<<<
- *     """Get CPU information based on OS."""
- *     try:
- */
-
-static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_cpu_info(void) {
-  PyObject *__pyx_v_f = NULL;
-  PyObject *__pyx_v_line = NULL;
-  PyObject *__pyx_r = NULL;
-  __Pyx_RefNannyDeclarations
-  PyObject *__pyx_t_1 = NULL;
-  PyObject *__pyx_t_2 = NULL;
-  PyObject *__pyx_t_3 = NULL;
-  PyObject *__pyx_t_4 = NULL;
-  PyObject *__pyx_t_5 = NULL;
-  PyObject *__pyx_t_6 = NULL;
-  unsigned int __pyx_t_7;
-  int __pyx_t_8;
-  PyObject *__pyx_t_9 = NULL;
-  PyObject *__pyx_t_10 = NULL;
-  PyObject *__pyx_t_11 = NULL;
-  PyObject *__pyx_t_12 = NULL;
-  PyObject *__pyx_t_13 = NULL;
-  Py_ssize_t __pyx_t_14;
-  PyObject *(*__pyx_t_15)(PyObject *);
+  int __pyx_t_15;
   PyObject *__pyx_t_16 = NULL;
-  PyObject *__pyx_t_17 = NULL;
-  int __pyx_t_18;
-  PyObject *__pyx_t_19 = NULL;
-  PyObject *__pyx_t_20 = NULL;
   int __pyx_lineno = 0;
   const char *__pyx_filename = NULL;
   int __pyx_clineno = 0;
-  __Pyx_RefNannySetupContext("_get_cpu_info", 1);
+  __Pyx_RefNannySetupContext("_get_cached_machine_id", 1);
 
-  /* "docgen/utils/_machine_utils.pyx":44
- * cdef str _get_cpu_info():
- *     """Get CPU information based on OS."""
+  /* "docgen/utils/_machine_utils.pyx":131
+ * cdef str _get_cached_machine_id():
+ *     """Get machine ID from cache file."""
  *     try:             # <<<<<<<<<<<<<<
- *         if platform.system() == 'Windows':
- *             return platform.processor()
+ *         cache_dir = os.path.expanduser('~/.docgen/cache')
+ *         cache_file = os.path.join(cache_dir, '.machine_id')
  */
   {
     __Pyx_PyThreadState_declare
@@ -3751,107 +5408,149 @@ static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_cpu_info(void) {
     __Pyx_XGOTREF(__pyx_t_3);
     /*try:*/ {
 
-      /* "docgen/utils/_machine_utils.pyx":45
- *     """Get CPU information based on OS."""
+      /* "docgen/utils/_machine_utils.pyx":132
+ *     """Get machine ID from cache file."""
  *     try:
- *         if platform.system() == 'Windows':             # <<<<<<<<<<<<<<
- *             return platform.processor()
- *         else:
+ *         cache_dir = os.path.expanduser('~/.docgen/cache')             # <<<<<<<<<<<<<<
+ *         cache_file = os.path.join(cache_dir, '.machine_id')
+ * 
  */
-      __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_n_s_platform); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 45, __pyx_L3_error)
+      __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_n_s_os); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 132, __pyx_L3_error)
       __Pyx_GOTREF(__pyx_t_5);
-      __pyx_t_6 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_system); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 45, __pyx_L3_error)
+      __pyx_t_6 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_path); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 132, __pyx_L3_error)
       __Pyx_GOTREF(__pyx_t_6);
       __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      __pyx_t_5 = NULL;
+      __pyx_t_5 = __Pyx_PyObject_GetAttrStr(__pyx_t_6, __pyx_n_s_expanduser); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 132, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_5);
+      __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+      __pyx_t_6 = NULL;
       __pyx_t_7 = 0;
       #if CYTHON_UNPACK_METHODS
-      if (unlikely(PyMethod_Check(__pyx_t_6))) {
-        __pyx_t_5 = PyMethod_GET_SELF(__pyx_t_6);
-        if (likely(__pyx_t_5)) {
-          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_6);
-          __Pyx_INCREF(__pyx_t_5);
+      if (likely(PyMethod_Check(__pyx_t_5))) {
+        __pyx_t_6 = PyMethod_GET_SELF(__pyx_t_5);
+        if (likely(__pyx_t_6)) {
+          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_5);
+          __Pyx_INCREF(__pyx_t_6);
           __Pyx_INCREF(function);
-          __Pyx_DECREF_SET(__pyx_t_6, function);
+          __Pyx_DECREF_SET(__pyx_t_5, function);
           __pyx_t_7 = 1;
         }
       }
       #endif
       {
-        PyObject *__pyx_callargs[2] = {__pyx_t_5, NULL};
-        __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_6, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-        __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 45, __pyx_L3_error)
+        PyObject *__pyx_callargs[2] = {__pyx_t_6, __pyx_kp_u_docgen_cache};
+        __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_5, __pyx_callargs+1-__pyx_t_7, 1+__pyx_t_7);
+        __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 132, __pyx_L3_error)
         __Pyx_GOTREF(__pyx_t_4);
-        __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+        __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
       }
-      __pyx_t_8 = (__Pyx_PyUnicode_Equals(__pyx_t_4, __pyx_n_u_Windows, Py_EQ)); if (unlikely((__pyx_t_8 < 0))) __PYX_ERR(0, 45, __pyx_L3_error)
+      __pyx_v_cache_dir = __pyx_t_4;
+      __pyx_t_4 = 0;
+
+      /* "docgen/utils/_machine_utils.pyx":133
+ *     try:
+ *         cache_dir = os.path.expanduser('~/.docgen/cache')
+ *         cache_file = os.path.join(cache_dir, '.machine_id')             # <<<<<<<<<<<<<<
+ * 
+ *         if os.path.exists(cache_file):
+ */
+      __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_n_s_os); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 133, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_5);
+      __pyx_t_6 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_path); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 133, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_6);
+      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+      __pyx_t_5 = __Pyx_PyObject_GetAttrStr(__pyx_t_6, __pyx_n_s_join); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 133, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_5);
+      __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+      __pyx_t_6 = NULL;
+      __pyx_t_7 = 0;
+      #if CYTHON_UNPACK_METHODS
+      if (likely(PyMethod_Check(__pyx_t_5))) {
+        __pyx_t_6 = PyMethod_GET_SELF(__pyx_t_5);
+        if (likely(__pyx_t_6)) {
+          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_5);
+          __Pyx_INCREF(__pyx_t_6);
+          __Pyx_INCREF(function);
+          __Pyx_DECREF_SET(__pyx_t_5, function);
+          __pyx_t_7 = 1;
+        }
+      }
+      #endif
+      {
+        PyObject *__pyx_callargs[3] = {__pyx_t_6, __pyx_v_cache_dir, __pyx_kp_u_machine_id};
+        __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_5, __pyx_callargs+1-__pyx_t_7, 2+__pyx_t_7);
+        __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 133, __pyx_L3_error)
+        __Pyx_GOTREF(__pyx_t_4);
+        __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+      }
+      __pyx_v_cache_file = __pyx_t_4;
+      __pyx_t_4 = 0;
+
+      /* "docgen/utils/_machine_utils.pyx":135
+ *         cache_file = os.path.join(cache_dir, '.machine_id')
+ * 
+ *         if os.path.exists(cache_file):             # <<<<<<<<<<<<<<
+ *             with open(cache_file, 'r') as f:
+ *                 return f.read().strip()
+ */
+      __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_n_s_os); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 135, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_5);
+      __pyx_t_6 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_path); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 135, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_6);
+      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+      __pyx_t_5 = __Pyx_PyObject_GetAttrStr(__pyx_t_6, __pyx_n_s_exists); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 135, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_5);
+      __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+      __pyx_t_6 = NULL;
+      __pyx_t_7 = 0;
+      #if CYTHON_UNPACK_METHODS
+      if (likely(PyMethod_Check(__pyx_t_5))) {
+        __pyx_t_6 = PyMethod_GET_SELF(__pyx_t_5);
+        if (likely(__pyx_t_6)) {
+          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_5);
+          __Pyx_INCREF(__pyx_t_6);
+          __Pyx_INCREF(function);
+          __Pyx_DECREF_SET(__pyx_t_5, function);
+          __pyx_t_7 = 1;
+        }
+      }
+      #endif
+      {
+        PyObject *__pyx_callargs[2] = {__pyx_t_6, __pyx_v_cache_file};
+        __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_5, __pyx_callargs+1-__pyx_t_7, 1+__pyx_t_7);
+        __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 135, __pyx_L3_error)
+        __Pyx_GOTREF(__pyx_t_4);
+        __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+      }
+      __pyx_t_8 = __Pyx_PyObject_IsTrue(__pyx_t_4); if (unlikely((__pyx_t_8 < 0))) __PYX_ERR(0, 135, __pyx_L3_error)
       __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
       if (__pyx_t_8) {
 
-        /* "docgen/utils/_machine_utils.pyx":46
- *     try:
- *         if platform.system() == 'Windows':
- *             return platform.processor()             # <<<<<<<<<<<<<<
- *         else:
- *             with open('/proc/cpuinfo', 'r') as f:
+        /* "docgen/utils/_machine_utils.pyx":136
+ * 
+ *         if os.path.exists(cache_file):
+ *             with open(cache_file, 'r') as f:             # <<<<<<<<<<<<<<
+ *                 return f.read().strip()
+ *     except:
  */
-        __Pyx_XDECREF(__pyx_r);
-        __Pyx_GetModuleGlobalName(__pyx_t_6, __pyx_n_s_platform); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 46, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_6);
-        __pyx_t_5 = __Pyx_PyObject_GetAttrStr(__pyx_t_6, __pyx_n_s_processor); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 46, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_5);
-        __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
-        __pyx_t_6 = NULL;
-        __pyx_t_7 = 0;
-        #if CYTHON_UNPACK_METHODS
-        if (unlikely(PyMethod_Check(__pyx_t_5))) {
-          __pyx_t_6 = PyMethod_GET_SELF(__pyx_t_5);
-          if (likely(__pyx_t_6)) {
-            PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_5);
-            __Pyx_INCREF(__pyx_t_6);
-            __Pyx_INCREF(function);
-            __Pyx_DECREF_SET(__pyx_t_5, function);
-            __pyx_t_7 = 1;
-          }
-        }
-        #endif
-        {
-          PyObject *__pyx_callargs[2] = {__pyx_t_6, NULL};
-          __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_5, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-          __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
-          if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 46, __pyx_L3_error)
-          __Pyx_GOTREF(__pyx_t_4);
-          __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-        }
-        if (!(likely(PyUnicode_CheckExact(__pyx_t_4))||((__pyx_t_4) == Py_None) || __Pyx_RaiseUnexpectedTypeError("unicode", __pyx_t_4))) __PYX_ERR(0, 46, __pyx_L3_error)
-        __pyx_r = ((PyObject*)__pyx_t_4);
-        __pyx_t_4 = 0;
-        goto __pyx_L7_try_return;
-
-        /* "docgen/utils/_machine_utils.pyx":45
- *     """Get CPU information based on OS."""
- *     try:
- *         if platform.system() == 'Windows':             # <<<<<<<<<<<<<<
- *             return platform.processor()
- *         else:
- */
-      }
-
-      /* "docgen/utils/_machine_utils.pyx":48
- *             return platform.processor()
- *         else:
- *             with open('/proc/cpuinfo', 'r') as f:             # <<<<<<<<<<<<<<
- *                 for line in f:
- *                     if line.startswith('model name'):
- */
-      /*else*/ {
         /*with:*/ {
-          __pyx_t_4 = __Pyx_PyObject_Call(__pyx_builtin_open, __pyx_tuple__7, NULL); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 48, __pyx_L3_error)
+          __pyx_t_4 = PyTuple_New(2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 136, __pyx_L3_error)
           __Pyx_GOTREF(__pyx_t_4);
-          __pyx_t_9 = __Pyx_PyObject_LookupSpecial(__pyx_t_4, __pyx_n_s_exit); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 48, __pyx_L3_error)
+          __Pyx_INCREF(__pyx_v_cache_file);
+          __Pyx_GIVEREF(__pyx_v_cache_file);
+          if (__Pyx_PyTuple_SET_ITEM(__pyx_t_4, 0, __pyx_v_cache_file)) __PYX_ERR(0, 136, __pyx_L3_error);
+          __Pyx_INCREF(__pyx_n_u_r);
+          __Pyx_GIVEREF(__pyx_n_u_r);
+          if (__Pyx_PyTuple_SET_ITEM(__pyx_t_4, 1, __pyx_n_u_r)) __PYX_ERR(0, 136, __pyx_L3_error);
+          __pyx_t_5 = __Pyx_PyObject_Call(__pyx_builtin_open, __pyx_t_4, NULL); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 136, __pyx_L3_error)
+          __Pyx_GOTREF(__pyx_t_5);
+          __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+          __pyx_t_9 = __Pyx_PyObject_LookupSpecial(__pyx_t_5, __pyx_n_s_exit); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 136, __pyx_L3_error)
           __Pyx_GOTREF(__pyx_t_9);
-          __pyx_t_6 = __Pyx_PyObject_LookupSpecial(__pyx_t_4, __pyx_n_s_enter); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 48, __pyx_L10_error)
+          __pyx_t_6 = __Pyx_PyObject_LookupSpecial(__pyx_t_5, __pyx_n_s_enter); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 136, __pyx_L10_error)
           __Pyx_GOTREF(__pyx_t_6);
           __pyx_t_10 = NULL;
           __pyx_t_7 = 0;
@@ -3869,15 +5568,15 @@ static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_cpu_info(void) {
           #endif
           {
             PyObject *__pyx_callargs[2] = {__pyx_t_10, NULL};
-            __pyx_t_5 = __Pyx_PyObject_FastCall(__pyx_t_6, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
+            __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_6, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
             __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
-            if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 48, __pyx_L10_error)
-            __Pyx_GOTREF(__pyx_t_5);
+            if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 136, __pyx_L10_error)
+            __Pyx_GOTREF(__pyx_t_4);
             __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
           }
-          __pyx_t_6 = __pyx_t_5;
-          __pyx_t_5 = 0;
-          __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+          __pyx_t_6 = __pyx_t_4;
+          __pyx_t_4 = 0;
+          __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
           /*try:*/ {
             {
               __Pyx_PyThreadState_declare
@@ -3890,230 +5589,105 @@ static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_cpu_info(void) {
                 __pyx_v_f = __pyx_t_6;
                 __pyx_t_6 = 0;
 
-                /* "docgen/utils/_machine_utils.pyx":49
- *         else:
- *             with open('/proc/cpuinfo', 'r') as f:
- *                 for line in f:             # <<<<<<<<<<<<<<
- *                     if line.startswith('model name'):
- *                         return line.split(':')[1].strip()
+                /* "docgen/utils/_machine_utils.pyx":137
+ *         if os.path.exists(cache_file):
+ *             with open(cache_file, 'r') as f:
+ *                 return f.read().strip()             # <<<<<<<<<<<<<<
+ *     except:
+ *         pass
  */
-                if (likely(PyList_CheckExact(__pyx_v_f)) || PyTuple_CheckExact(__pyx_v_f)) {
-                  __pyx_t_6 = __pyx_v_f; __Pyx_INCREF(__pyx_t_6);
-                  __pyx_t_14 = 0;
-                  __pyx_t_15 = NULL;
-                } else {
-                  __pyx_t_14 = -1; __pyx_t_6 = PyObject_GetIter(__pyx_v_f); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 49, __pyx_L14_error)
-                  __Pyx_GOTREF(__pyx_t_6);
-                  __pyx_t_15 = __Pyx_PyObject_GetIterNextFunc(__pyx_t_6); if (unlikely(!__pyx_t_15)) __PYX_ERR(0, 49, __pyx_L14_error)
+                __Pyx_XDECREF(__pyx_r);
+                __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_v_f, __pyx_n_s_read); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 137, __pyx_L14_error)
+                __Pyx_GOTREF(__pyx_t_4);
+                __pyx_t_10 = NULL;
+                __pyx_t_7 = 0;
+                #if CYTHON_UNPACK_METHODS
+                if (likely(PyMethod_Check(__pyx_t_4))) {
+                  __pyx_t_10 = PyMethod_GET_SELF(__pyx_t_4);
+                  if (likely(__pyx_t_10)) {
+                    PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_4);
+                    __Pyx_INCREF(__pyx_t_10);
+                    __Pyx_INCREF(function);
+                    __Pyx_DECREF_SET(__pyx_t_4, function);
+                    __pyx_t_7 = 1;
+                  }
                 }
-                for (;;) {
-                  if (likely(!__pyx_t_15)) {
-                    if (likely(PyList_CheckExact(__pyx_t_6))) {
-                      {
-                        Py_ssize_t __pyx_temp = __Pyx_PyList_GET_SIZE(__pyx_t_6);
-                        #if !CYTHON_ASSUME_SAFE_MACROS
-                        if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 49, __pyx_L14_error)
-                        #endif
-                        if (__pyx_t_14 >= __pyx_temp) break;
-                      }
-                      #if CYTHON_ASSUME_SAFE_MACROS && !CYTHON_AVOID_BORROWED_REFS
-                      __pyx_t_4 = PyList_GET_ITEM(__pyx_t_6, __pyx_t_14); __Pyx_INCREF(__pyx_t_4); __pyx_t_14++; if (unlikely((0 < 0))) __PYX_ERR(0, 49, __pyx_L14_error)
-                      #else
-                      __pyx_t_4 = __Pyx_PySequence_ITEM(__pyx_t_6, __pyx_t_14); __pyx_t_14++; if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 49, __pyx_L14_error)
-                      __Pyx_GOTREF(__pyx_t_4);
-                      #endif
-                    } else {
-                      {
-                        Py_ssize_t __pyx_temp = __Pyx_PyTuple_GET_SIZE(__pyx_t_6);
-                        #if !CYTHON_ASSUME_SAFE_MACROS
-                        if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 49, __pyx_L14_error)
-                        #endif
-                        if (__pyx_t_14 >= __pyx_temp) break;
-                      }
-                      #if CYTHON_ASSUME_SAFE_MACROS && !CYTHON_AVOID_BORROWED_REFS
-                      __pyx_t_4 = PyTuple_GET_ITEM(__pyx_t_6, __pyx_t_14); __Pyx_INCREF(__pyx_t_4); __pyx_t_14++; if (unlikely((0 < 0))) __PYX_ERR(0, 49, __pyx_L14_error)
-                      #else
-                      __pyx_t_4 = __Pyx_PySequence_ITEM(__pyx_t_6, __pyx_t_14); __pyx_t_14++; if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 49, __pyx_L14_error)
-                      __Pyx_GOTREF(__pyx_t_4);
-                      #endif
-                    }
-                  } else {
-                    __pyx_t_4 = __pyx_t_15(__pyx_t_6);
-                    if (unlikely(!__pyx_t_4)) {
-                      PyObject* exc_type = PyErr_Occurred();
-                      if (exc_type) {
-                        if (likely(__Pyx_PyErr_GivenExceptionMatches(exc_type, PyExc_StopIteration))) PyErr_Clear();
-                        else __PYX_ERR(0, 49, __pyx_L14_error)
-                      }
-                      break;
-                    }
-                    __Pyx_GOTREF(__pyx_t_4);
-                  }
-                  __Pyx_XDECREF_SET(__pyx_v_line, __pyx_t_4);
-                  __pyx_t_4 = 0;
-
-                  /* "docgen/utils/_machine_utils.pyx":50
- *             with open('/proc/cpuinfo', 'r') as f:
- *                 for line in f:
- *                     if line.startswith('model name'):             # <<<<<<<<<<<<<<
- *                         return line.split(':')[1].strip()
- *         return platform.processor()
- */
-                  __pyx_t_5 = __Pyx_PyObject_GetAttrStr(__pyx_v_line, __pyx_n_s_startswith); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 50, __pyx_L14_error)
+                #endif
+                {
+                  PyObject *__pyx_callargs[2] = {__pyx_t_10, NULL};
+                  __pyx_t_5 = __Pyx_PyObject_FastCall(__pyx_t_4, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
+                  __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
+                  if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 137, __pyx_L14_error)
                   __Pyx_GOTREF(__pyx_t_5);
-                  __pyx_t_10 = NULL;
-                  __pyx_t_7 = 0;
-                  #if CYTHON_UNPACK_METHODS
-                  if (likely(PyMethod_Check(__pyx_t_5))) {
-                    __pyx_t_10 = PyMethod_GET_SELF(__pyx_t_5);
-                    if (likely(__pyx_t_10)) {
-                      PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_5);
-                      __Pyx_INCREF(__pyx_t_10);
-                      __Pyx_INCREF(function);
-                      __Pyx_DECREF_SET(__pyx_t_5, function);
-                      __pyx_t_7 = 1;
-                    }
-                  }
-                  #endif
-                  {
-                    PyObject *__pyx_callargs[2] = {__pyx_t_10, __pyx_kp_u_model_name};
-                    __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_5, __pyx_callargs+1-__pyx_t_7, 1+__pyx_t_7);
-                    __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
-                    if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 50, __pyx_L14_error)
-                    __Pyx_GOTREF(__pyx_t_4);
-                    __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-                  }
-                  __pyx_t_8 = __Pyx_PyObject_IsTrue(__pyx_t_4); if (unlikely((__pyx_t_8 < 0))) __PYX_ERR(0, 50, __pyx_L14_error)
                   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-                  if (__pyx_t_8) {
+                }
+                __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_strip); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 137, __pyx_L14_error)
+                __Pyx_GOTREF(__pyx_t_4);
+                __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+                __pyx_t_5 = NULL;
+                __pyx_t_7 = 0;
+                #if CYTHON_UNPACK_METHODS
+                if (likely(PyMethod_Check(__pyx_t_4))) {
+                  __pyx_t_5 = PyMethod_GET_SELF(__pyx_t_4);
+                  if (likely(__pyx_t_5)) {
+                    PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_4);
+                    __Pyx_INCREF(__pyx_t_5);
+                    __Pyx_INCREF(function);
+                    __Pyx_DECREF_SET(__pyx_t_4, function);
+                    __pyx_t_7 = 1;
+                  }
+                }
+                #endif
+                {
+                  PyObject *__pyx_callargs[2] = {__pyx_t_5, NULL};
+                  __pyx_t_6 = __Pyx_PyObject_FastCall(__pyx_t_4, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
+                  __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
+                  if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 137, __pyx_L14_error)
+                  __Pyx_GOTREF(__pyx_t_6);
+                  __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+                }
+                if (!(likely(PyUnicode_CheckExact(__pyx_t_6))||((__pyx_t_6) == Py_None) || __Pyx_RaiseUnexpectedTypeError("unicode", __pyx_t_6))) __PYX_ERR(0, 137, __pyx_L14_error)
+                __pyx_r = ((PyObject*)__pyx_t_6);
+                __pyx_t_6 = 0;
+                goto __pyx_L18_try_return;
 
-                    /* "docgen/utils/_machine_utils.pyx":51
- *                 for line in f:
- *                     if line.startswith('model name'):
- *                         return line.split(':')[1].strip()             # <<<<<<<<<<<<<<
- *         return platform.processor()
+                /* "docgen/utils/_machine_utils.pyx":136
+ * 
+ *         if os.path.exists(cache_file):
+ *             with open(cache_file, 'r') as f:             # <<<<<<<<<<<<<<
+ *                 return f.read().strip()
  *     except:
  */
-                    __Pyx_XDECREF(__pyx_r);
-                    __pyx_t_10 = __Pyx_PyObject_GetAttrStr(__pyx_v_line, __pyx_n_s_split); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 51, __pyx_L14_error)
-                    __Pyx_GOTREF(__pyx_t_10);
-                    __pyx_t_16 = NULL;
-                    __pyx_t_7 = 0;
-                    #if CYTHON_UNPACK_METHODS
-                    if (likely(PyMethod_Check(__pyx_t_10))) {
-                      __pyx_t_16 = PyMethod_GET_SELF(__pyx_t_10);
-                      if (likely(__pyx_t_16)) {
-                        PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_10);
-                        __Pyx_INCREF(__pyx_t_16);
-                        __Pyx_INCREF(function);
-                        __Pyx_DECREF_SET(__pyx_t_10, function);
-                        __pyx_t_7 = 1;
-                      }
-                    }
-                    #endif
-                    {
-                      PyObject *__pyx_callargs[2] = {__pyx_t_16, __pyx_kp_u__8};
-                      __pyx_t_5 = __Pyx_PyObject_FastCall(__pyx_t_10, __pyx_callargs+1-__pyx_t_7, 1+__pyx_t_7);
-                      __Pyx_XDECREF(__pyx_t_16); __pyx_t_16 = 0;
-                      if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 51, __pyx_L14_error)
-                      __Pyx_GOTREF(__pyx_t_5);
-                      __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
-                    }
-                    __pyx_t_10 = __Pyx_GetItemInt(__pyx_t_5, 1, long, 1, __Pyx_PyInt_From_long, 0, 0, 1); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 51, __pyx_L14_error)
-                    __Pyx_GOTREF(__pyx_t_10);
-                    __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-                    __pyx_t_5 = __Pyx_PyObject_GetAttrStr(__pyx_t_10, __pyx_n_s_strip); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 51, __pyx_L14_error)
-                    __Pyx_GOTREF(__pyx_t_5);
-                    __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
-                    __pyx_t_10 = NULL;
-                    __pyx_t_7 = 0;
-                    #if CYTHON_UNPACK_METHODS
-                    if (likely(PyMethod_Check(__pyx_t_5))) {
-                      __pyx_t_10 = PyMethod_GET_SELF(__pyx_t_5);
-                      if (likely(__pyx_t_10)) {
-                        PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_5);
-                        __Pyx_INCREF(__pyx_t_10);
-                        __Pyx_INCREF(function);
-                        __Pyx_DECREF_SET(__pyx_t_5, function);
-                        __pyx_t_7 = 1;
-                      }
-                    }
-                    #endif
-                    {
-                      PyObject *__pyx_callargs[2] = {__pyx_t_10, NULL};
-                      __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_5, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-                      __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
-                      if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 51, __pyx_L14_error)
-                      __Pyx_GOTREF(__pyx_t_4);
-                      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-                    }
-                    if (!(likely(PyUnicode_CheckExact(__pyx_t_4))||((__pyx_t_4) == Py_None) || __Pyx_RaiseUnexpectedTypeError("unicode", __pyx_t_4))) __PYX_ERR(0, 51, __pyx_L14_error)
-                    __pyx_r = ((PyObject*)__pyx_t_4);
-                    __pyx_t_4 = 0;
-                    __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
-                    goto __pyx_L18_try_return;
-
-                    /* "docgen/utils/_machine_utils.pyx":50
- *             with open('/proc/cpuinfo', 'r') as f:
- *                 for line in f:
- *                     if line.startswith('model name'):             # <<<<<<<<<<<<<<
- *                         return line.split(':')[1].strip()
- *         return platform.processor()
- */
-                  }
-
-                  /* "docgen/utils/_machine_utils.pyx":49
- *         else:
- *             with open('/proc/cpuinfo', 'r') as f:
- *                 for line in f:             # <<<<<<<<<<<<<<
- *                     if line.startswith('model name'):
- *                         return line.split(':')[1].strip()
- */
-                }
-                __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
-
-                /* "docgen/utils/_machine_utils.pyx":48
- *             return platform.processor()
- *         else:
- *             with open('/proc/cpuinfo', 'r') as f:             # <<<<<<<<<<<<<<
- *                 for line in f:
- *                     if line.startswith('model name'):
- */
               }
-              __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
-              __Pyx_XDECREF(__pyx_t_12); __pyx_t_12 = 0;
-              __Pyx_XDECREF(__pyx_t_13); __pyx_t_13 = 0;
-              goto __pyx_L19_try_end;
               __pyx_L14_error:;
               __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
-              __Pyx_XDECREF(__pyx_t_16); __pyx_t_16 = 0;
               __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
               __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
               __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
               /*except:*/ {
-                __Pyx_AddTraceback("docgen.utils._machine_utils._get_cpu_info", __pyx_clineno, __pyx_lineno, __pyx_filename);
-                if (__Pyx_GetException(&__pyx_t_6, &__pyx_t_4, &__pyx_t_5) < 0) __PYX_ERR(0, 48, __pyx_L16_except_error)
+                __Pyx_AddTraceback("docgen.utils._machine_utils._get_cached_machine_id", __pyx_clineno, __pyx_lineno, __pyx_filename);
+                if (__Pyx_GetException(&__pyx_t_6, &__pyx_t_4, &__pyx_t_5) < 0) __PYX_ERR(0, 136, __pyx_L16_except_error)
                 __Pyx_XGOTREF(__pyx_t_6);
                 __Pyx_XGOTREF(__pyx_t_4);
                 __Pyx_XGOTREF(__pyx_t_5);
-                __pyx_t_10 = PyTuple_Pack(3, __pyx_t_6, __pyx_t_4, __pyx_t_5); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 48, __pyx_L16_except_error)
+                __pyx_t_10 = PyTuple_Pack(3, __pyx_t_6, __pyx_t_4, __pyx_t_5); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 136, __pyx_L16_except_error)
                 __Pyx_GOTREF(__pyx_t_10);
-                __pyx_t_17 = __Pyx_PyObject_Call(__pyx_t_9, __pyx_t_10, NULL);
+                __pyx_t_14 = __Pyx_PyObject_Call(__pyx_t_9, __pyx_t_10, NULL);
                 __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
                 __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
-                if (unlikely(!__pyx_t_17)) __PYX_ERR(0, 48, __pyx_L16_except_error)
-                __Pyx_GOTREF(__pyx_t_17);
-                __pyx_t_8 = __Pyx_PyObject_IsTrue(__pyx_t_17);
-                __Pyx_DECREF(__pyx_t_17); __pyx_t_17 = 0;
-                if (__pyx_t_8 < 0) __PYX_ERR(0, 48, __pyx_L16_except_error)
-                __pyx_t_18 = (!__pyx_t_8);
-                if (unlikely(__pyx_t_18)) {
+                if (unlikely(!__pyx_t_14)) __PYX_ERR(0, 136, __pyx_L16_except_error)
+                __Pyx_GOTREF(__pyx_t_14);
+                __pyx_t_8 = __Pyx_PyObject_IsTrue(__pyx_t_14);
+                __Pyx_DECREF(__pyx_t_14); __pyx_t_14 = 0;
+                if (__pyx_t_8 < 0) __PYX_ERR(0, 136, __pyx_L16_except_error)
+                __pyx_t_15 = (!__pyx_t_8);
+                if (unlikely(__pyx_t_15)) {
                   __Pyx_GIVEREF(__pyx_t_6);
                   __Pyx_GIVEREF(__pyx_t_4);
                   __Pyx_XGIVEREF(__pyx_t_5);
                   __Pyx_ErrRestoreWithState(__pyx_t_6, __pyx_t_4, __pyx_t_5);
                   __pyx_t_6 = 0; __pyx_t_4 = 0; __pyx_t_5 = 0; 
-                  __PYX_ERR(0, 48, __pyx_L16_except_error)
+                  __PYX_ERR(0, 136, __pyx_L16_except_error)
                 }
                 __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
                 __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
@@ -4137,7 +5711,6 @@ static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_cpu_info(void) {
               __Pyx_XGIVEREF(__pyx_t_12);
               __Pyx_XGIVEREF(__pyx_t_13);
               __Pyx_ExceptionReset(__pyx_t_11, __pyx_t_12, __pyx_t_13);
-              __pyx_L19_try_end:;
             }
           }
           /*finally:*/ {
@@ -4145,53 +5718,260 @@ static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_cpu_info(void) {
               if (__pyx_t_9) {
                 __pyx_t_13 = __Pyx_PyObject_Call(__pyx_t_9, __pyx_tuple__6, NULL);
                 __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
-                if (unlikely(!__pyx_t_13)) __PYX_ERR(0, 48, __pyx_L3_error)
+                if (unlikely(!__pyx_t_13)) __PYX_ERR(0, 136, __pyx_L3_error)
                 __Pyx_GOTREF(__pyx_t_13);
                 __Pyx_DECREF(__pyx_t_13); __pyx_t_13 = 0;
               }
               goto __pyx_L13;
             }
             __pyx_L11_return: {
-              __pyx_t_19 = __pyx_r;
+              __pyx_t_16 = __pyx_r;
               __pyx_r = 0;
               if (__pyx_t_9) {
                 __pyx_t_13 = __Pyx_PyObject_Call(__pyx_t_9, __pyx_tuple__6, NULL);
                 __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
-                if (unlikely(!__pyx_t_13)) __PYX_ERR(0, 48, __pyx_L3_error)
+                if (unlikely(!__pyx_t_13)) __PYX_ERR(0, 136, __pyx_L3_error)
                 __Pyx_GOTREF(__pyx_t_13);
                 __Pyx_DECREF(__pyx_t_13); __pyx_t_13 = 0;
               }
-              __pyx_r = __pyx_t_19;
-              __pyx_t_19 = 0;
+              __pyx_r = __pyx_t_16;
+              __pyx_t_16 = 0;
               goto __pyx_L7_try_return;
             }
             __pyx_L13:;
           }
-          goto __pyx_L27;
+          goto __pyx_L23;
           __pyx_L10_error:;
           __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
           goto __pyx_L3_error;
-          __pyx_L27:;
+          __pyx_L23:;
         }
+
+        /* "docgen/utils/_machine_utils.pyx":135
+ *         cache_file = os.path.join(cache_dir, '.machine_id')
+ * 
+ *         if os.path.exists(cache_file):             # <<<<<<<<<<<<<<
+ *             with open(cache_file, 'r') as f:
+ *                 return f.read().strip()
+ */
       }
 
-      /* "docgen/utils/_machine_utils.pyx":52
- *                     if line.startswith('model name'):
- *                         return line.split(':')[1].strip()
- *         return platform.processor()             # <<<<<<<<<<<<<<
- *     except:
- *         return platform.processor()
+      /* "docgen/utils/_machine_utils.pyx":131
+ * cdef str _get_cached_machine_id():
+ *     """Get machine ID from cache file."""
+ *     try:             # <<<<<<<<<<<<<<
+ *         cache_dir = os.path.expanduser('~/.docgen/cache')
+ *         cache_file = os.path.join(cache_dir, '.machine_id')
  */
-      __Pyx_XDECREF(__pyx_r);
-      __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_n_s_platform); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 52, __pyx_L3_error)
+    }
+    __Pyx_XDECREF(__pyx_t_1); __pyx_t_1 = 0;
+    __Pyx_XDECREF(__pyx_t_2); __pyx_t_2 = 0;
+    __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
+    goto __pyx_L8_try_end;
+    __pyx_L3_error:;
+    __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
+    __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
+    __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
+    __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+
+    /* "docgen/utils/_machine_utils.pyx":138
+ *             with open(cache_file, 'r') as f:
+ *                 return f.read().strip()
+ *     except:             # <<<<<<<<<<<<<<
+ *         pass
+ *     return ""
+ */
+    /*except:*/ {
+      __Pyx_ErrRestore(0,0,0);
+      goto __pyx_L4_exception_handled;
+    }
+
+    /* "docgen/utils/_machine_utils.pyx":131
+ * cdef str _get_cached_machine_id():
+ *     """Get machine ID from cache file."""
+ *     try:             # <<<<<<<<<<<<<<
+ *         cache_dir = os.path.expanduser('~/.docgen/cache')
+ *         cache_file = os.path.join(cache_dir, '.machine_id')
+ */
+    __pyx_L7_try_return:;
+    __Pyx_XGIVEREF(__pyx_t_1);
+    __Pyx_XGIVEREF(__pyx_t_2);
+    __Pyx_XGIVEREF(__pyx_t_3);
+    __Pyx_ExceptionReset(__pyx_t_1, __pyx_t_2, __pyx_t_3);
+    goto __pyx_L0;
+    __pyx_L4_exception_handled:;
+    __Pyx_XGIVEREF(__pyx_t_1);
+    __Pyx_XGIVEREF(__pyx_t_2);
+    __Pyx_XGIVEREF(__pyx_t_3);
+    __Pyx_ExceptionReset(__pyx_t_1, __pyx_t_2, __pyx_t_3);
+    __pyx_L8_try_end:;
+  }
+
+  /* "docgen/utils/_machine_utils.pyx":140
+ *     except:
+ *         pass
+ *     return ""             # <<<<<<<<<<<<<<
+ * 
+ * cdef void _save_machine_id(str machine_id):
+ */
+  __Pyx_XDECREF(__pyx_r);
+  __Pyx_INCREF(__pyx_kp_u_);
+  __pyx_r = __pyx_kp_u_;
+  goto __pyx_L0;
+
+  /* "docgen/utils/_machine_utils.pyx":129
+ *         return []
+ * 
+ * cdef str _get_cached_machine_id():             # <<<<<<<<<<<<<<
+ *     """Get machine ID from cache file."""
+ *     try:
+ */
+
+  /* function exit code */
+  __pyx_L0:;
+  __Pyx_XDECREF(__pyx_v_cache_dir);
+  __Pyx_XDECREF(__pyx_v_cache_file);
+  __Pyx_XDECREF(__pyx_v_f);
+  __Pyx_XGIVEREF(__pyx_r);
+  __Pyx_RefNannyFinishContext();
+  return __pyx_r;
+}
+
+/* "docgen/utils/_machine_utils.pyx":142
+ *     return ""
+ * 
+ * cdef void _save_machine_id(str machine_id):             # <<<<<<<<<<<<<<
+ *     """Save machine ID to cache file."""
+ *     try:
+ */
+
+static void __pyx_f_6docgen_5utils_14_machine_utils__save_machine_id(PyObject *__pyx_v_machine_id) {
+  PyObject *__pyx_v_cache_dir = NULL;
+  PyObject *__pyx_v_cache_file = NULL;
+  PyObject *__pyx_v_f = NULL;
+  __Pyx_RefNannyDeclarations
+  PyObject *__pyx_t_1 = NULL;
+  PyObject *__pyx_t_2 = NULL;
+  PyObject *__pyx_t_3 = NULL;
+  PyObject *__pyx_t_4 = NULL;
+  PyObject *__pyx_t_5 = NULL;
+  PyObject *__pyx_t_6 = NULL;
+  unsigned int __pyx_t_7;
+  PyObject *__pyx_t_8 = NULL;
+  PyObject *__pyx_t_9 = NULL;
+  PyObject *__pyx_t_10 = NULL;
+  PyObject *__pyx_t_11 = NULL;
+  PyObject *__pyx_t_12 = NULL;
+  PyObject *__pyx_t_13 = NULL;
+  int __pyx_t_14;
+  int __pyx_t_15;
+  int __pyx_lineno = 0;
+  const char *__pyx_filename = NULL;
+  int __pyx_clineno = 0;
+  __Pyx_RefNannySetupContext("_save_machine_id", 1);
+
+  /* "docgen/utils/_machine_utils.pyx":144
+ * cdef void _save_machine_id(str machine_id):
+ *     """Save machine ID to cache file."""
+ *     try:             # <<<<<<<<<<<<<<
+ *         cache_dir = os.path.expanduser('~/.docgen/cache')
+ *         os.makedirs(cache_dir, exist_ok=True)
+ */
+  {
+    __Pyx_PyThreadState_declare
+    __Pyx_PyThreadState_assign
+    __Pyx_ExceptionSave(&__pyx_t_1, &__pyx_t_2, &__pyx_t_3);
+    __Pyx_XGOTREF(__pyx_t_1);
+    __Pyx_XGOTREF(__pyx_t_2);
+    __Pyx_XGOTREF(__pyx_t_3);
+    /*try:*/ {
+
+      /* "docgen/utils/_machine_utils.pyx":145
+ *     """Save machine ID to cache file."""
+ *     try:
+ *         cache_dir = os.path.expanduser('~/.docgen/cache')             # <<<<<<<<<<<<<<
+ *         os.makedirs(cache_dir, exist_ok=True)
+ *         cache_file = os.path.join(cache_dir, '.machine_id')
+ */
+      __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_n_s_os); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 145, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_5);
+      __pyx_t_6 = __Pyx_PyObject_GetAttrStr(__pyx_t_5, __pyx_n_s_path); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 145, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_6);
+      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+      __pyx_t_5 = __Pyx_PyObject_GetAttrStr(__pyx_t_6, __pyx_n_s_expanduser); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 145, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_5);
+      __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+      __pyx_t_6 = NULL;
+      __pyx_t_7 = 0;
+      #if CYTHON_UNPACK_METHODS
+      if (likely(PyMethod_Check(__pyx_t_5))) {
+        __pyx_t_6 = PyMethod_GET_SELF(__pyx_t_5);
+        if (likely(__pyx_t_6)) {
+          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_5);
+          __Pyx_INCREF(__pyx_t_6);
+          __Pyx_INCREF(function);
+          __Pyx_DECREF_SET(__pyx_t_5, function);
+          __pyx_t_7 = 1;
+        }
+      }
+      #endif
+      {
+        PyObject *__pyx_callargs[2] = {__pyx_t_6, __pyx_kp_u_docgen_cache};
+        __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_5, __pyx_callargs+1-__pyx_t_7, 1+__pyx_t_7);
+        __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 145, __pyx_L3_error)
+        __Pyx_GOTREF(__pyx_t_4);
+        __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+      }
+      __pyx_v_cache_dir = __pyx_t_4;
+      __pyx_t_4 = 0;
+
+      /* "docgen/utils/_machine_utils.pyx":146
+ *     try:
+ *         cache_dir = os.path.expanduser('~/.docgen/cache')
+ *         os.makedirs(cache_dir, exist_ok=True)             # <<<<<<<<<<<<<<
+ *         cache_file = os.path.join(cache_dir, '.machine_id')
+ * 
+ */
+      __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_n_s_os); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 146, __pyx_L3_error)
       __Pyx_GOTREF(__pyx_t_4);
-      __pyx_t_6 = __Pyx_PyObject_GetAttrStr(__pyx_t_4, __pyx_n_s_processor); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 52, __pyx_L3_error)
+      __pyx_t_5 = __Pyx_PyObject_GetAttrStr(__pyx_t_4, __pyx_n_s_makedirs); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 146, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_5);
+      __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+      __pyx_t_4 = PyTuple_New(1); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 146, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_4);
+      __Pyx_INCREF(__pyx_v_cache_dir);
+      __Pyx_GIVEREF(__pyx_v_cache_dir);
+      if (__Pyx_PyTuple_SET_ITEM(__pyx_t_4, 0, __pyx_v_cache_dir)) __PYX_ERR(0, 146, __pyx_L3_error);
+      __pyx_t_6 = __Pyx_PyDict_NewPresized(1); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 146, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_6);
+      if (PyDict_SetItem(__pyx_t_6, __pyx_n_s_exist_ok, Py_True) < 0) __PYX_ERR(0, 146, __pyx_L3_error)
+      __pyx_t_8 = __Pyx_PyObject_Call(__pyx_t_5, __pyx_t_4, __pyx_t_6); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 146, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_8);
+      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+      __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+      __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+      __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+
+      /* "docgen/utils/_machine_utils.pyx":147
+ *         cache_dir = os.path.expanduser('~/.docgen/cache')
+ *         os.makedirs(cache_dir, exist_ok=True)
+ *         cache_file = os.path.join(cache_dir, '.machine_id')             # <<<<<<<<<<<<<<
+ * 
+ *         with open(cache_file, 'w') as f:
+ */
+      __Pyx_GetModuleGlobalName(__pyx_t_6, __pyx_n_s_os); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 147, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_6);
+      __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_t_6, __pyx_n_s_path); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 147, __pyx_L3_error)
+      __Pyx_GOTREF(__pyx_t_4);
+      __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+      __pyx_t_6 = __Pyx_PyObject_GetAttrStr(__pyx_t_4, __pyx_n_s_join); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 147, __pyx_L3_error)
       __Pyx_GOTREF(__pyx_t_6);
       __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
       __pyx_t_4 = NULL;
       __pyx_t_7 = 0;
       #if CYTHON_UNPACK_METHODS
-      if (unlikely(PyMethod_Check(__pyx_t_6))) {
+      if (likely(PyMethod_Check(__pyx_t_6))) {
         __pyx_t_4 = PyMethod_GET_SELF(__pyx_t_6);
         if (likely(__pyx_t_4)) {
           PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_6);
@@ -4203,139 +5983,239 @@ static PyObject *__pyx_f_6docgen_5utils_14_machine_utils__get_cpu_info(void) {
       }
       #endif
       {
-        PyObject *__pyx_callargs[2] = {__pyx_t_4, NULL};
-        __pyx_t_5 = __Pyx_PyObject_FastCall(__pyx_t_6, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
+        PyObject *__pyx_callargs[3] = {__pyx_t_4, __pyx_v_cache_dir, __pyx_kp_u_machine_id};
+        __pyx_t_8 = __Pyx_PyObject_FastCall(__pyx_t_6, __pyx_callargs+1-__pyx_t_7, 2+__pyx_t_7);
         __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-        if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 52, __pyx_L3_error)
-        __Pyx_GOTREF(__pyx_t_5);
+        if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 147, __pyx_L3_error)
+        __Pyx_GOTREF(__pyx_t_8);
         __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
       }
-      if (!(likely(PyUnicode_CheckExact(__pyx_t_5))||((__pyx_t_5) == Py_None) || __Pyx_RaiseUnexpectedTypeError("unicode", __pyx_t_5))) __PYX_ERR(0, 52, __pyx_L3_error)
-      __pyx_r = ((PyObject*)__pyx_t_5);
-      __pyx_t_5 = 0;
-      goto __pyx_L7_try_return;
+      __pyx_v_cache_file = __pyx_t_8;
+      __pyx_t_8 = 0;
 
-      /* "docgen/utils/_machine_utils.pyx":44
- * cdef str _get_cpu_info():
- *     """Get CPU information based on OS."""
+      /* "docgen/utils/_machine_utils.pyx":149
+ *         cache_file = os.path.join(cache_dir, '.machine_id')
+ * 
+ *         with open(cache_file, 'w') as f:             # <<<<<<<<<<<<<<
+ *             f.write(machine_id)
+ *     except:
+ */
+      /*with:*/ {
+        __pyx_t_8 = PyTuple_New(2); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 149, __pyx_L3_error)
+        __Pyx_GOTREF(__pyx_t_8);
+        __Pyx_INCREF(__pyx_v_cache_file);
+        __Pyx_GIVEREF(__pyx_v_cache_file);
+        if (__Pyx_PyTuple_SET_ITEM(__pyx_t_8, 0, __pyx_v_cache_file)) __PYX_ERR(0, 149, __pyx_L3_error);
+        __Pyx_INCREF(__pyx_n_u_w);
+        __Pyx_GIVEREF(__pyx_n_u_w);
+        if (__Pyx_PyTuple_SET_ITEM(__pyx_t_8, 1, __pyx_n_u_w)) __PYX_ERR(0, 149, __pyx_L3_error);
+        __pyx_t_6 = __Pyx_PyObject_Call(__pyx_builtin_open, __pyx_t_8, NULL); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 149, __pyx_L3_error)
+        __Pyx_GOTREF(__pyx_t_6);
+        __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
+        __pyx_t_9 = __Pyx_PyObject_LookupSpecial(__pyx_t_6, __pyx_n_s_exit); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 149, __pyx_L3_error)
+        __Pyx_GOTREF(__pyx_t_9);
+        __pyx_t_4 = __Pyx_PyObject_LookupSpecial(__pyx_t_6, __pyx_n_s_enter); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 149, __pyx_L9_error)
+        __Pyx_GOTREF(__pyx_t_4);
+        __pyx_t_5 = NULL;
+        __pyx_t_7 = 0;
+        #if CYTHON_UNPACK_METHODS
+        if (likely(PyMethod_Check(__pyx_t_4))) {
+          __pyx_t_5 = PyMethod_GET_SELF(__pyx_t_4);
+          if (likely(__pyx_t_5)) {
+            PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_4);
+            __Pyx_INCREF(__pyx_t_5);
+            __Pyx_INCREF(function);
+            __Pyx_DECREF_SET(__pyx_t_4, function);
+            __pyx_t_7 = 1;
+          }
+        }
+        #endif
+        {
+          PyObject *__pyx_callargs[2] = {__pyx_t_5, NULL};
+          __pyx_t_8 = __Pyx_PyObject_FastCall(__pyx_t_4, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
+          __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
+          if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 149, __pyx_L9_error)
+          __Pyx_GOTREF(__pyx_t_8);
+          __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+        }
+        __pyx_t_4 = __pyx_t_8;
+        __pyx_t_8 = 0;
+        __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+        /*try:*/ {
+          {
+            __Pyx_PyThreadState_declare
+            __Pyx_PyThreadState_assign
+            __Pyx_ExceptionSave(&__pyx_t_10, &__pyx_t_11, &__pyx_t_12);
+            __Pyx_XGOTREF(__pyx_t_10);
+            __Pyx_XGOTREF(__pyx_t_11);
+            __Pyx_XGOTREF(__pyx_t_12);
+            /*try:*/ {
+              __pyx_v_f = __pyx_t_4;
+              __pyx_t_4 = 0;
+
+              /* "docgen/utils/_machine_utils.pyx":150
+ * 
+ *         with open(cache_file, 'w') as f:
+ *             f.write(machine_id)             # <<<<<<<<<<<<<<
+ *     except:
+ *         pass
+ */
+              __pyx_t_6 = __Pyx_PyObject_GetAttrStr(__pyx_v_f, __pyx_n_s_write); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 150, __pyx_L13_error)
+              __Pyx_GOTREF(__pyx_t_6);
+              __pyx_t_8 = NULL;
+              __pyx_t_7 = 0;
+              #if CYTHON_UNPACK_METHODS
+              if (likely(PyMethod_Check(__pyx_t_6))) {
+                __pyx_t_8 = PyMethod_GET_SELF(__pyx_t_6);
+                if (likely(__pyx_t_8)) {
+                  PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_6);
+                  __Pyx_INCREF(__pyx_t_8);
+                  __Pyx_INCREF(function);
+                  __Pyx_DECREF_SET(__pyx_t_6, function);
+                  __pyx_t_7 = 1;
+                }
+              }
+              #endif
+              {
+                PyObject *__pyx_callargs[2] = {__pyx_t_8, __pyx_v_machine_id};
+                __pyx_t_4 = __Pyx_PyObject_FastCall(__pyx_t_6, __pyx_callargs+1-__pyx_t_7, 1+__pyx_t_7);
+                __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
+                if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 150, __pyx_L13_error)
+                __Pyx_GOTREF(__pyx_t_4);
+                __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
+              }
+              __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+
+              /* "docgen/utils/_machine_utils.pyx":149
+ *         cache_file = os.path.join(cache_dir, '.machine_id')
+ * 
+ *         with open(cache_file, 'w') as f:             # <<<<<<<<<<<<<<
+ *             f.write(machine_id)
+ *     except:
+ */
+            }
+            __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
+            __Pyx_XDECREF(__pyx_t_11); __pyx_t_11 = 0;
+            __Pyx_XDECREF(__pyx_t_12); __pyx_t_12 = 0;
+            goto __pyx_L18_try_end;
+            __pyx_L13_error:;
+            __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
+            __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
+            __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+            __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
+            /*except:*/ {
+              __Pyx_AddTraceback("docgen.utils._machine_utils._save_machine_id", __pyx_clineno, __pyx_lineno, __pyx_filename);
+              if (__Pyx_GetException(&__pyx_t_4, &__pyx_t_6, &__pyx_t_8) < 0) __PYX_ERR(0, 149, __pyx_L15_except_error)
+              __Pyx_XGOTREF(__pyx_t_4);
+              __Pyx_XGOTREF(__pyx_t_6);
+              __Pyx_XGOTREF(__pyx_t_8);
+              __pyx_t_5 = PyTuple_Pack(3, __pyx_t_4, __pyx_t_6, __pyx_t_8); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 149, __pyx_L15_except_error)
+              __Pyx_GOTREF(__pyx_t_5);
+              __pyx_t_13 = __Pyx_PyObject_Call(__pyx_t_9, __pyx_t_5, NULL);
+              __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
+              __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+              if (unlikely(!__pyx_t_13)) __PYX_ERR(0, 149, __pyx_L15_except_error)
+              __Pyx_GOTREF(__pyx_t_13);
+              __pyx_t_14 = __Pyx_PyObject_IsTrue(__pyx_t_13);
+              __Pyx_DECREF(__pyx_t_13); __pyx_t_13 = 0;
+              if (__pyx_t_14 < 0) __PYX_ERR(0, 149, __pyx_L15_except_error)
+              __pyx_t_15 = (!__pyx_t_14);
+              if (unlikely(__pyx_t_15)) {
+                __Pyx_GIVEREF(__pyx_t_4);
+                __Pyx_GIVEREF(__pyx_t_6);
+                __Pyx_XGIVEREF(__pyx_t_8);
+                __Pyx_ErrRestoreWithState(__pyx_t_4, __pyx_t_6, __pyx_t_8);
+                __pyx_t_4 = 0; __pyx_t_6 = 0; __pyx_t_8 = 0; 
+                __PYX_ERR(0, 149, __pyx_L15_except_error)
+              }
+              __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
+              __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+              __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
+              goto __pyx_L14_exception_handled;
+            }
+            __pyx_L15_except_error:;
+            __Pyx_XGIVEREF(__pyx_t_10);
+            __Pyx_XGIVEREF(__pyx_t_11);
+            __Pyx_XGIVEREF(__pyx_t_12);
+            __Pyx_ExceptionReset(__pyx_t_10, __pyx_t_11, __pyx_t_12);
+            goto __pyx_L3_error;
+            __pyx_L14_exception_handled:;
+            __Pyx_XGIVEREF(__pyx_t_10);
+            __Pyx_XGIVEREF(__pyx_t_11);
+            __Pyx_XGIVEREF(__pyx_t_12);
+            __Pyx_ExceptionReset(__pyx_t_10, __pyx_t_11, __pyx_t_12);
+            __pyx_L18_try_end:;
+          }
+        }
+        /*finally:*/ {
+          /*normal exit:*/{
+            if (__pyx_t_9) {
+              __pyx_t_12 = __Pyx_PyObject_Call(__pyx_t_9, __pyx_tuple__6, NULL);
+              __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
+              if (unlikely(!__pyx_t_12)) __PYX_ERR(0, 149, __pyx_L3_error)
+              __Pyx_GOTREF(__pyx_t_12);
+              __Pyx_DECREF(__pyx_t_12); __pyx_t_12 = 0;
+            }
+            goto __pyx_L12;
+          }
+          __pyx_L12:;
+        }
+        goto __pyx_L22;
+        __pyx_L9_error:;
+        __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
+        goto __pyx_L3_error;
+        __pyx_L22:;
+      }
+
+      /* "docgen/utils/_machine_utils.pyx":144
+ * cdef void _save_machine_id(str machine_id):
+ *     """Save machine ID to cache file."""
  *     try:             # <<<<<<<<<<<<<<
- *         if platform.system() == 'Windows':
- *             return platform.processor()
+ *         cache_dir = os.path.expanduser('~/.docgen/cache')
+ *         os.makedirs(cache_dir, exist_ok=True)
  */
     }
+    __Pyx_XDECREF(__pyx_t_1); __pyx_t_1 = 0;
+    __Pyx_XDECREF(__pyx_t_2); __pyx_t_2 = 0;
+    __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
+    goto __pyx_L8_try_end;
     __pyx_L3_error:;
-    __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
-    __Pyx_XDECREF(__pyx_t_16); __pyx_t_16 = 0;
     __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
     __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
     __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
+    __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
 
-    /* "docgen/utils/_machine_utils.pyx":53
- *                         return line.split(':')[1].strip()
- *         return platform.processor()
+    /* "docgen/utils/_machine_utils.pyx":151
+ *         with open(cache_file, 'w') as f:
+ *             f.write(machine_id)
  *     except:             # <<<<<<<<<<<<<<
- *         return platform.processor()
+ *         pass
  */
     /*except:*/ {
-      __Pyx_AddTraceback("docgen.utils._machine_utils._get_cpu_info", __pyx_clineno, __pyx_lineno, __pyx_filename);
-      if (__Pyx_GetException(&__pyx_t_5, &__pyx_t_6, &__pyx_t_4) < 0) __PYX_ERR(0, 53, __pyx_L5_except_error)
-      __Pyx_XGOTREF(__pyx_t_5);
-      __Pyx_XGOTREF(__pyx_t_6);
-      __Pyx_XGOTREF(__pyx_t_4);
-
-      /* "docgen/utils/_machine_utils.pyx":54
- *         return platform.processor()
- *     except:
- *         return platform.processor()             # <<<<<<<<<<<<<<
- */
-      __Pyx_XDECREF(__pyx_r);
-      __Pyx_GetModuleGlobalName(__pyx_t_16, __pyx_n_s_platform); if (unlikely(!__pyx_t_16)) __PYX_ERR(0, 54, __pyx_L5_except_error)
-      __Pyx_GOTREF(__pyx_t_16);
-      __pyx_t_20 = __Pyx_PyObject_GetAttrStr(__pyx_t_16, __pyx_n_s_processor); if (unlikely(!__pyx_t_20)) __PYX_ERR(0, 54, __pyx_L5_except_error)
-      __Pyx_GOTREF(__pyx_t_20);
-      __Pyx_DECREF(__pyx_t_16); __pyx_t_16 = 0;
-      __pyx_t_16 = NULL;
-      __pyx_t_7 = 0;
-      #if CYTHON_UNPACK_METHODS
-      if (unlikely(PyMethod_Check(__pyx_t_20))) {
-        __pyx_t_16 = PyMethod_GET_SELF(__pyx_t_20);
-        if (likely(__pyx_t_16)) {
-          PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_20);
-          __Pyx_INCREF(__pyx_t_16);
-          __Pyx_INCREF(function);
-          __Pyx_DECREF_SET(__pyx_t_20, function);
-          __pyx_t_7 = 1;
-        }
-      }
-      #endif
-      {
-        PyObject *__pyx_callargs[2] = {__pyx_t_16, NULL};
-        __pyx_t_10 = __Pyx_PyObject_FastCall(__pyx_t_20, __pyx_callargs+1-__pyx_t_7, 0+__pyx_t_7);
-        __Pyx_XDECREF(__pyx_t_16); __pyx_t_16 = 0;
-        if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 54, __pyx_L5_except_error)
-        __Pyx_GOTREF(__pyx_t_10);
-        __Pyx_DECREF(__pyx_t_20); __pyx_t_20 = 0;
-      }
-      if (!(likely(PyUnicode_CheckExact(__pyx_t_10))||((__pyx_t_10) == Py_None) || __Pyx_RaiseUnexpectedTypeError("unicode", __pyx_t_10))) __PYX_ERR(0, 54, __pyx_L5_except_error)
-      __pyx_r = ((PyObject*)__pyx_t_10);
-      __pyx_t_10 = 0;
-      __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
-      goto __pyx_L6_except_return;
+      __Pyx_ErrRestore(0,0,0);
+      goto __pyx_L4_exception_handled;
     }
-
-    /* "docgen/utils/_machine_utils.pyx":44
- * cdef str _get_cpu_info():
- *     """Get CPU information based on OS."""
- *     try:             # <<<<<<<<<<<<<<
- *         if platform.system() == 'Windows':
- *             return platform.processor()
- */
-    __pyx_L5_except_error:;
+    __pyx_L4_exception_handled:;
     __Pyx_XGIVEREF(__pyx_t_1);
     __Pyx_XGIVEREF(__pyx_t_2);
     __Pyx_XGIVEREF(__pyx_t_3);
     __Pyx_ExceptionReset(__pyx_t_1, __pyx_t_2, __pyx_t_3);
-    goto __pyx_L1_error;
-    __pyx_L7_try_return:;
-    __Pyx_XGIVEREF(__pyx_t_1);
-    __Pyx_XGIVEREF(__pyx_t_2);
-    __Pyx_XGIVEREF(__pyx_t_3);
-    __Pyx_ExceptionReset(__pyx_t_1, __pyx_t_2, __pyx_t_3);
-    goto __pyx_L0;
-    __pyx_L6_except_return:;
-    __Pyx_XGIVEREF(__pyx_t_1);
-    __Pyx_XGIVEREF(__pyx_t_2);
-    __Pyx_XGIVEREF(__pyx_t_3);
-    __Pyx_ExceptionReset(__pyx_t_1, __pyx_t_2, __pyx_t_3);
-    goto __pyx_L0;
+    __pyx_L8_try_end:;
   }
 
-  /* "docgen/utils/_machine_utils.pyx":42
- *         return ""
+  /* "docgen/utils/_machine_utils.pyx":142
+ *     return ""
  * 
- * cdef str _get_cpu_info():             # <<<<<<<<<<<<<<
- *     """Get CPU information based on OS."""
+ * cdef void _save_machine_id(str machine_id):             # <<<<<<<<<<<<<<
+ *     """Save machine ID to cache file."""
  *     try:
  */
 
   /* function exit code */
-  __pyx_L1_error:;
-  __Pyx_XDECREF(__pyx_t_4);
-  __Pyx_XDECREF(__pyx_t_5);
-  __Pyx_XDECREF(__pyx_t_6);
-  __Pyx_XDECREF(__pyx_t_10);
-  __Pyx_XDECREF(__pyx_t_16);
-  __Pyx_XDECREF(__pyx_t_20);
-  __Pyx_AddTraceback("docgen.utils._machine_utils._get_cpu_info", __pyx_clineno, __pyx_lineno, __pyx_filename);
-  __pyx_r = 0;
-  __pyx_L0:;
+  __Pyx_XDECREF(__pyx_v_cache_dir);
+  __Pyx_XDECREF(__pyx_v_cache_file);
   __Pyx_XDECREF(__pyx_v_f);
-  __Pyx_XDECREF(__pyx_v_line);
-  __Pyx_XGIVEREF(__pyx_r);
   __Pyx_RefNannyFinishContext();
-  return __pyx_r;
 }
 
 static PyMethodDef __pyx_methods[] = {
@@ -4355,19 +6235,35 @@ static PyMethodDef __pyx_methods[] = {
 static int __Pyx_CreateStringTabAndInitStrings(void) {
   __Pyx_StringTabEntry __pyx_string_tab[] = {
     {&__pyx_kp_u_, __pyx_k_, sizeof(__pyx_k_), 0, 1, 0, 0},
-    {&__pyx_n_s_GetLogicalDriveStrings, __pyx_k_GetLogicalDriveStrings, sizeof(__pyx_k_GetLogicalDriveStrings), 0, 0, 1, 1},
+    {&__pyx_kp_u_0000000000, __pyx_k_0000000000, sizeof(__pyx_k_0000000000), 0, 1, 0, 0},
+    {&__pyx_kp_u_C, __pyx_k_C, sizeof(__pyx_k_C), 0, 1, 0, 0},
+    {&__pyx_n_u_Darwin, __pyx_k_Darwin, sizeof(__pyx_k_Darwin), 0, 1, 0, 1},
+    {&__pyx_n_s_GetVolumeInformation, __pyx_k_GetVolumeInformation, sizeof(__pyx_k_GetVolumeInformation), 0, 0, 1, 1},
+    {&__pyx_kp_u_Hardware_UUID, __pyx_k_Hardware_UUID, sizeof(__pyx_k_Hardware_UUID), 0, 1, 0, 0},
+    {&__pyx_n_u_SPHardwareDataType, __pyx_k_SPHardwareDataType, sizeof(__pyx_k_SPHardwareDataType), 0, 1, 0, 1},
+    {&__pyx_n_s_SerialNumber, __pyx_k_SerialNumber, sizeof(__pyx_k_SerialNumber), 0, 0, 1, 1},
+    {&__pyx_kp_u_Serial_Number, __pyx_k_Serial_Number, sizeof(__pyx_k_Serial_Number), 0, 1, 0, 0},
+    {&__pyx_n_s_WMI, __pyx_k_WMI, sizeof(__pyx_k_WMI), 0, 0, 1, 1},
+    {&__pyx_n_s_Win32_BIOS, __pyx_k_Win32_BIOS, sizeof(__pyx_k_Win32_BIOS), 0, 0, 1, 1},
     {&__pyx_n_u_Windows, __pyx_k_Windows, sizeof(__pyx_k_Windows), 0, 1, 0, 1},
-    {&__pyx_n_s__11, __pyx_k__11, sizeof(__pyx_k__11), 0, 0, 1, 1},
+    {&__pyx_n_s__10, __pyx_k__10, sizeof(__pyx_k__10), 0, 0, 1, 1},
     {&__pyx_n_s__2, __pyx_k__2, sizeof(__pyx_k__2), 0, 0, 1, 1},
     {&__pyx_kp_u__3, __pyx_k__3, sizeof(__pyx_k__3), 0, 1, 0, 0},
-    {&__pyx_kp_u__8, __pyx_k__8, sizeof(__pyx_k__8), 0, 1, 0, 0},
+    {&__pyx_kp_u__4, __pyx_k__4, sizeof(__pyx_k__4), 0, 1, 0, 0},
     {&__pyx_n_s_asyncio_coroutines, __pyx_k_asyncio_coroutines, sizeof(__pyx_k_asyncio_coroutines), 0, 0, 1, 1},
+    {&__pyx_n_s_cached_id, __pyx_k_cached_id, sizeof(__pyx_k_cached_id), 0, 0, 1, 1},
+    {&__pyx_n_s_capture_output, __pyx_k_capture_output, sizeof(__pyx_k_capture_output), 0, 0, 1, 1},
     {&__pyx_n_s_cline_in_traceback, __pyx_k_cline_in_traceback, sizeof(__pyx_k_cline_in_traceback), 0, 0, 1, 1},
+    {&__pyx_kp_u_docgen_cache, __pyx_k_docgen_cache, sizeof(__pyx_k_docgen_cache), 0, 1, 0, 0},
     {&__pyx_n_s_docgen_utils__machine_utils, __pyx_k_docgen_utils__machine_utils, sizeof(__pyx_k_docgen_utils__machine_utils), 0, 0, 1, 1},
     {&__pyx_kp_s_docgen_utils__machine_utils_pyx, __pyx_k_docgen_utils__machine_utils_pyx, sizeof(__pyx_k_docgen_utils__machine_utils_pyx), 0, 0, 1, 0},
     {&__pyx_n_s_enter, __pyx_k_enter, sizeof(__pyx_k_enter), 0, 0, 1, 1},
     {&__pyx_kp_u_etc_machine_id, __pyx_k_etc_machine_id, sizeof(__pyx_k_etc_machine_id), 0, 1, 0, 0},
+    {&__pyx_n_s_exist_ok, __pyx_k_exist_ok, sizeof(__pyx_k_exist_ok), 0, 0, 1, 1},
+    {&__pyx_n_s_exists, __pyx_k_exists, sizeof(__pyx_k_exists), 0, 0, 1, 1},
     {&__pyx_n_s_exit, __pyx_k_exit, sizeof(__pyx_k_exit), 0, 0, 1, 1},
+    {&__pyx_n_s_expanduser, __pyx_k_expanduser, sizeof(__pyx_k_expanduser), 0, 0, 1, 1},
+    {&__pyx_n_s_fallback_id, __pyx_k_fallback_id, sizeof(__pyx_k_fallback_id), 0, 0, 1, 1},
     {&__pyx_n_s_get_machine_id, __pyx_k_get_machine_id, sizeof(__pyx_k_get_machine_id), 0, 0, 1, 1},
     {&__pyx_n_s_getnode, __pyx_k_getnode, sizeof(__pyx_k_getnode), 0, 0, 1, 1},
     {&__pyx_n_s_hashlib, __pyx_k_hashlib, sizeof(__pyx_k_hashlib), 0, 0, 1, 1},
@@ -4375,38 +6271,48 @@ static int __Pyx_CreateStringTabAndInitStrings(void) {
     {&__pyx_n_s_import, __pyx_k_import, sizeof(__pyx_k_import), 0, 0, 1, 1},
     {&__pyx_n_s_initializing, __pyx_k_initializing, sizeof(__pyx_k_initializing), 0, 0, 1, 1},
     {&__pyx_n_s_is_coroutine, __pyx_k_is_coroutine, sizeof(__pyx_k_is_coroutine), 0, 0, 1, 1},
-    {&__pyx_n_s_machine, __pyx_k_machine, sizeof(__pyx_k_machine), 0, 0, 1, 1},
-    {&__pyx_n_s_machine_id, __pyx_k_machine_id, sizeof(__pyx_k_machine_id), 0, 0, 1, 1},
+    {&__pyx_n_s_join, __pyx_k_join, sizeof(__pyx_k_join), 0, 0, 1, 1},
+    {&__pyx_kp_u_machine_id, __pyx_k_machine_id, sizeof(__pyx_k_machine_id), 0, 1, 0, 0},
+    {&__pyx_n_s_machine_id_2, __pyx_k_machine_id_2, sizeof(__pyx_k_machine_id_2), 0, 0, 1, 1},
     {&__pyx_n_s_main, __pyx_k_main, sizeof(__pyx_k_main), 0, 0, 1, 1},
-    {&__pyx_kp_u_model_name, __pyx_k_model_name, sizeof(__pyx_k_model_name), 0, 1, 0, 0},
+    {&__pyx_n_s_makedirs, __pyx_k_makedirs, sizeof(__pyx_k_makedirs), 0, 0, 1, 1},
     {&__pyx_n_s_name, __pyx_k_name, sizeof(__pyx_k_name), 0, 0, 1, 1},
-    {&__pyx_n_s_node, __pyx_k_node, sizeof(__pyx_k_node), 0, 0, 1, 1},
     {&__pyx_n_s_open, __pyx_k_open, sizeof(__pyx_k_open), 0, 0, 1, 1},
+    {&__pyx_n_s_os, __pyx_k_os, sizeof(__pyx_k_os), 0, 0, 1, 1},
+    {&__pyx_n_s_path, __pyx_k_path, sizeof(__pyx_k_path), 0, 0, 1, 1},
     {&__pyx_n_s_platform, __pyx_k_platform, sizeof(__pyx_k_platform), 0, 0, 1, 1},
-    {&__pyx_kp_u_proc_cpuinfo, __pyx_k_proc_cpuinfo, sizeof(__pyx_k_proc_cpuinfo), 0, 1, 0, 0},
-    {&__pyx_n_s_processor, __pyx_k_processor, sizeof(__pyx_k_processor), 0, 0, 1, 1},
     {&__pyx_n_u_r, __pyx_k_r, sizeof(__pyx_k_r), 0, 1, 0, 1},
     {&__pyx_n_s_read, __pyx_k_read, sizeof(__pyx_k_read), 0, 0, 1, 1},
     {&__pyx_n_s_return, __pyx_k_return, sizeof(__pyx_k_return), 0, 0, 1, 1},
+    {&__pyx_n_s_run, __pyx_k_run, sizeof(__pyx_k_run), 0, 0, 1, 1},
     {&__pyx_n_s_sha256, __pyx_k_sha256, sizeof(__pyx_k_sha256), 0, 0, 1, 1},
     {&__pyx_n_s_spec, __pyx_k_spec, sizeof(__pyx_k_spec), 0, 0, 1, 1},
     {&__pyx_n_s_split, __pyx_k_split, sizeof(__pyx_k_split), 0, 0, 1, 1},
-    {&__pyx_n_s_startswith, __pyx_k_startswith, sizeof(__pyx_k_startswith), 0, 0, 1, 1},
+    {&__pyx_n_s_stdout, __pyx_k_stdout, sizeof(__pyx_k_stdout), 0, 0, 1, 1},
     {&__pyx_n_s_str, __pyx_k_str, sizeof(__pyx_k_str), 0, 0, 1, 1},
     {&__pyx_n_s_strip, __pyx_k_strip, sizeof(__pyx_k_strip), 0, 0, 1, 1},
+    {&__pyx_n_s_subprocess, __pyx_k_subprocess, sizeof(__pyx_k_subprocess), 0, 0, 1, 1},
+    {&__pyx_kp_u_sys_class_dmi_id_board_serial, __pyx_k_sys_class_dmi_id_board_serial, sizeof(__pyx_k_sys_class_dmi_id_board_serial), 0, 1, 0, 0},
+    {&__pyx_kp_u_sys_class_dmi_id_product_uuid, __pyx_k_sys_class_dmi_id_product_uuid, sizeof(__pyx_k_sys_class_dmi_id_product_uuid), 0, 1, 0, 0},
     {&__pyx_n_s_system, __pyx_k_system, sizeof(__pyx_k_system), 0, 0, 1, 1},
     {&__pyx_n_s_system_info, __pyx_k_system_info, sizeof(__pyx_k_system_info), 0, 0, 1, 1},
+    {&__pyx_n_u_system_profiler, __pyx_k_system_profiler, sizeof(__pyx_k_system_profiler), 0, 1, 0, 1},
     {&__pyx_n_s_test, __pyx_k_test, sizeof(__pyx_k_test), 0, 0, 1, 1},
+    {&__pyx_n_s_text, __pyx_k_text, sizeof(__pyx_k_text), 0, 0, 1, 1},
     {&__pyx_n_s_uuid, __pyx_k_uuid, sizeof(__pyx_k_uuid), 0, 0, 1, 1},
-    {&__pyx_n_s_version, __pyx_k_version, sizeof(__pyx_k_version), 0, 0, 1, 1},
+    {&__pyx_kp_u_var_lib_dbus_machine_id, __pyx_k_var_lib_dbus_machine_id, sizeof(__pyx_k_var_lib_dbus_machine_id), 0, 1, 0, 0},
+    {&__pyx_n_u_w, __pyx_k_w, sizeof(__pyx_k_w), 0, 1, 0, 1},
     {&__pyx_n_s_win32api, __pyx_k_win32api, sizeof(__pyx_k_win32api), 0, 0, 1, 1},
+    {&__pyx_n_s_win32security, __pyx_k_win32security, sizeof(__pyx_k_win32security), 0, 0, 1, 1},
+    {&__pyx_n_s_wmi, __pyx_k_wmi, sizeof(__pyx_k_wmi), 0, 0, 1, 1},
+    {&__pyx_n_s_write, __pyx_k_write, sizeof(__pyx_k_write), 0, 0, 1, 1},
     {0, 0, 0, 0, 0, 0, 0}
   };
   return __Pyx_InitStrings(__pyx_string_tab);
 }
 /* #### Code section: cached_builtins ### */
 static CYTHON_SMALL_CODE int __Pyx_InitCachedBuiltins(void) {
-  __pyx_builtin_open = __Pyx_GetBuiltinName(__pyx_n_s_open); if (!__pyx_builtin_open) __PYX_ERR(0, 37, __pyx_L1_error)
+  __pyx_builtin_open = __Pyx_GetBuiltinName(__pyx_n_s_open); if (!__pyx_builtin_open) __PYX_ERR(0, 106, __pyx_L1_error)
   return 0;
   __pyx_L1_error:;
   return -1;
@@ -4417,53 +6323,50 @@ static CYTHON_SMALL_CODE int __Pyx_InitCachedConstants(void) {
   __Pyx_RefNannyDeclarations
   __Pyx_RefNannySetupContext("__Pyx_InitCachedConstants", 0);
 
-  /* "docgen/utils/_machine_utils.pyx":34
- *         if platform.system() == 'Windows':
- *             import win32api
- *             drives = win32api.GetLogicalDriveStrings().split('\000')[:-1]             # <<<<<<<<<<<<<<
- *             return hashlib.sha256(str(drives[0]).encode()).hexdigest()
- *         else:
+  /* "docgen/utils/_machine_utils.pyx":103
+ * 
+ *         # Try machine-id files
+ *         for path in ['/etc/machine-id', '/var/lib/dbus/machine-id']:             # <<<<<<<<<<<<<<
+ *             try:
+ *                 if os.path.exists(path):
  */
-  __pyx_slice__4 = PySlice_New(Py_None, __pyx_int_neg_1, Py_None); if (unlikely(!__pyx_slice__4)) __PYX_ERR(0, 34, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_slice__4);
-  __Pyx_GIVEREF(__pyx_slice__4);
-
-  /* "docgen/utils/_machine_utils.pyx":37
- *             return hashlib.sha256(str(drives[0]).encode()).hexdigest()
- *         else:
- *             with open('/etc/machine-id', 'r') as f:             # <<<<<<<<<<<<<<
- *                 return f.read().strip()
- *     except:
- */
-  __pyx_tuple__5 = PyTuple_Pack(2, __pyx_kp_u_etc_machine_id, __pyx_n_u_r); if (unlikely(!__pyx_tuple__5)) __PYX_ERR(0, 37, __pyx_L1_error)
+  __pyx_tuple__5 = PyTuple_Pack(2, __pyx_kp_u_etc_machine_id, __pyx_kp_u_var_lib_dbus_machine_id); if (unlikely(!__pyx_tuple__5)) __PYX_ERR(0, 103, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_tuple__5);
   __Pyx_GIVEREF(__pyx_tuple__5);
-  __pyx_tuple__6 = PyTuple_Pack(3, Py_None, Py_None, Py_None); if (unlikely(!__pyx_tuple__6)) __PYX_ERR(0, 37, __pyx_L1_error)
+
+  /* "docgen/utils/_machine_utils.pyx":106
+ *             try:
+ *                 if os.path.exists(path):
+ *                     with open(path, 'r') as f:             # <<<<<<<<<<<<<<
+ *                         content = f.read().strip()
+ *                         if content:
+ */
+  __pyx_tuple__6 = PyTuple_Pack(3, Py_None, Py_None, Py_None); if (unlikely(!__pyx_tuple__6)) __PYX_ERR(0, 106, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_tuple__6);
   __Pyx_GIVEREF(__pyx_tuple__6);
 
-  /* "docgen/utils/_machine_utils.pyx":48
- *             return platform.processor()
- *         else:
- *             with open('/proc/cpuinfo', 'r') as f:             # <<<<<<<<<<<<<<
- *                 for line in f:
- *                     if line.startswith('model name'):
+  /* "docgen/utils/_machine_utils.pyx":115
+ *         # Try DMI system information
+ *         try:
+ *             for path in ['/sys/class/dmi/id/product_uuid',             # <<<<<<<<<<<<<<
+ *                         '/sys/class/dmi/id/board_serial']:
+ *                 if os.path.exists(path):
  */
-  __pyx_tuple__7 = PyTuple_Pack(2, __pyx_kp_u_proc_cpuinfo, __pyx_n_u_r); if (unlikely(!__pyx_tuple__7)) __PYX_ERR(0, 48, __pyx_L1_error)
+  __pyx_tuple__7 = PyTuple_Pack(2, __pyx_kp_u_sys_class_dmi_id_product_uuid, __pyx_kp_u_sys_class_dmi_id_board_serial); if (unlikely(!__pyx_tuple__7)) __PYX_ERR(0, 115, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_tuple__7);
   __Pyx_GIVEREF(__pyx_tuple__7);
 
-  /* "docgen/utils/_machine_utils.pyx":9
+  /* "docgen/utils/_machine_utils.pyx":10
  * cimport cython
  * 
  * @cython.binding(True)             # <<<<<<<<<<<<<<
  * def get_machine_id() -> str:
  *     """Generate a unique machine identifier with hardware info."""
  */
-  __pyx_tuple__9 = PyTuple_Pack(2, __pyx_n_s_system_info, __pyx_n_s_machine_id); if (unlikely(!__pyx_tuple__9)) __PYX_ERR(0, 9, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_tuple__9);
-  __Pyx_GIVEREF(__pyx_tuple__9);
-  __pyx_codeobj__10 = (PyObject*)__Pyx_PyCode_New(0, 0, 0, 2, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__9, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_docgen_utils__machine_utils_pyx, __pyx_n_s_get_machine_id, 9, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__10)) __PYX_ERR(0, 9, __pyx_L1_error)
+  __pyx_tuple__8 = PyTuple_Pack(4, __pyx_n_s_cached_id, __pyx_n_s_system_info, __pyx_n_s_machine_id_2, __pyx_n_s_fallback_id); if (unlikely(!__pyx_tuple__8)) __PYX_ERR(0, 10, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_tuple__8);
+  __Pyx_GIVEREF(__pyx_tuple__8);
+  __pyx_codeobj__9 = (PyObject*)__Pyx_PyCode_New(0, 0, 0, 4, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__8, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_docgen_utils__machine_utils_pyx, __pyx_n_s_get_machine_id, 10, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__9)) __PYX_ERR(0, 10, __pyx_L1_error)
   __Pyx_RefNannyFinishContext();
   return 0;
   __pyx_L1_error:;
@@ -4474,7 +6377,6 @@ static CYTHON_SMALL_CODE int __Pyx_InitCachedConstants(void) {
 
 static CYTHON_SMALL_CODE int __Pyx_InitConstants(void) {
   if (__Pyx_CreateStringTabAndInitStrings() < 0) __PYX_ERR(0, 1, __pyx_L1_error);
-  __pyx_int_neg_1 = PyInt_FromLong(-1); if (unlikely(!__pyx_int_neg_1)) __PYX_ERR(0, 1, __pyx_L1_error)
   return 0;
   __pyx_L1_error:;
   return -1;
@@ -4846,7 +6748,7 @@ if (!__Pyx_RefNanny) {
  * import hashlib
  * import platform             # <<<<<<<<<<<<<<
  * import uuid
- * cimport cython
+ * import os
  */
   __pyx_t_2 = __Pyx_ImportDottedModule(__pyx_n_s_platform, NULL); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 5, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
@@ -4857,29 +6759,41 @@ if (!__Pyx_RefNanny) {
  * import hashlib
  * import platform
  * import uuid             # <<<<<<<<<<<<<<
+ * import os
  * cimport cython
- * 
  */
   __pyx_t_2 = __Pyx_ImportDottedModule(__pyx_n_s_uuid, NULL); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 6, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_uuid, __pyx_t_2) < 0) __PYX_ERR(0, 6, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
-  /* "docgen/utils/_machine_utils.pyx":9
+  /* "docgen/utils/_machine_utils.pyx":7
+ * import platform
+ * import uuid
+ * import os             # <<<<<<<<<<<<<<
+ * cimport cython
+ * 
+ */
+  __pyx_t_2 = __Pyx_ImportDottedModule(__pyx_n_s_os, NULL); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 7, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_2);
+  if (PyDict_SetItem(__pyx_d, __pyx_n_s_os, __pyx_t_2) < 0) __PYX_ERR(0, 7, __pyx_L1_error)
+  __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
+
+  /* "docgen/utils/_machine_utils.pyx":10
  * cimport cython
  * 
  * @cython.binding(True)             # <<<<<<<<<<<<<<
  * def get_machine_id() -> str:
  *     """Generate a unique machine identifier with hardware info."""
  */
-  __pyx_t_2 = __Pyx_PyDict_NewPresized(1); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 9, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_PyDict_NewPresized(1); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 10, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  if (PyDict_SetItem(__pyx_t_2, __pyx_n_s_return, __pyx_n_s_str) < 0) __PYX_ERR(0, 9, __pyx_L1_error)
-  __pyx_t_3 = __Pyx_CyFunction_New(&__pyx_mdef_6docgen_5utils_14_machine_utils_1get_machine_id, 0, __pyx_n_s_get_machine_id, NULL, __pyx_n_s_docgen_utils__machine_utils, __pyx_d, ((PyObject *)__pyx_codeobj__10)); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 9, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_t_2, __pyx_n_s_return, __pyx_n_s_str) < 0) __PYX_ERR(0, 10, __pyx_L1_error)
+  __pyx_t_3 = __Pyx_CyFunction_New(&__pyx_mdef_6docgen_5utils_14_machine_utils_1get_machine_id, 0, __pyx_n_s_get_machine_id, NULL, __pyx_n_s_docgen_utils__machine_utils, __pyx_d, ((PyObject *)__pyx_codeobj__9)); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 10, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_3);
   __Pyx_CyFunction_SetAnnotationsDict(__pyx_t_3, __pyx_t_2);
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  if (PyDict_SetItem(__pyx_d, __pyx_n_s_get_machine_id, __pyx_t_3) < 0) __PYX_ERR(0, 9, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_d, __pyx_n_s_get_machine_id, __pyx_t_3) < 0) __PYX_ERR(0, 10, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
 
   /* "docgen/utils/_machine_utils.pyx":1
@@ -6037,110 +7951,6 @@ static PyObject *__Pyx_ImportDottedModule(PyObject *name, PyObject *parts_tuple)
     }
 #endif
     return __Pyx__ImportDottedModule(name, parts_tuple);
-}
-
-/* SliceObject */
-static CYTHON_INLINE PyObject* __Pyx_PyObject_GetSlice(PyObject* obj,
-        Py_ssize_t cstart, Py_ssize_t cstop,
-        PyObject** _py_start, PyObject** _py_stop, PyObject** _py_slice,
-        int has_cstart, int has_cstop, int wraparound) {
-    __Pyx_TypeName obj_type_name;
-#if CYTHON_USE_TYPE_SLOTS
-    PyMappingMethods* mp;
-#if PY_MAJOR_VERSION < 3
-    PySequenceMethods* ms = Py_TYPE(obj)->tp_as_sequence;
-    if (likely(ms && ms->sq_slice)) {
-        if (!has_cstart) {
-            if (_py_start && (*_py_start != Py_None)) {
-                cstart = __Pyx_PyIndex_AsSsize_t(*_py_start);
-                if ((cstart == (Py_ssize_t)-1) && PyErr_Occurred()) goto bad;
-            } else
-                cstart = 0;
-        }
-        if (!has_cstop) {
-            if (_py_stop && (*_py_stop != Py_None)) {
-                cstop = __Pyx_PyIndex_AsSsize_t(*_py_stop);
-                if ((cstop == (Py_ssize_t)-1) && PyErr_Occurred()) goto bad;
-            } else
-                cstop = PY_SSIZE_T_MAX;
-        }
-        if (wraparound && unlikely((cstart < 0) | (cstop < 0)) && likely(ms->sq_length)) {
-            Py_ssize_t l = ms->sq_length(obj);
-            if (likely(l >= 0)) {
-                if (cstop < 0) {
-                    cstop += l;
-                    if (cstop < 0) cstop = 0;
-                }
-                if (cstart < 0) {
-                    cstart += l;
-                    if (cstart < 0) cstart = 0;
-                }
-            } else {
-                if (!PyErr_ExceptionMatches(PyExc_OverflowError))
-                    goto bad;
-                PyErr_Clear();
-            }
-        }
-        return ms->sq_slice(obj, cstart, cstop);
-    }
-#else
-    CYTHON_UNUSED_VAR(wraparound);
-#endif
-    mp = Py_TYPE(obj)->tp_as_mapping;
-    if (likely(mp && mp->mp_subscript))
-#else
-    CYTHON_UNUSED_VAR(wraparound);
-#endif
-    {
-        PyObject* result;
-        PyObject *py_slice, *py_start, *py_stop;
-        if (_py_slice) {
-            py_slice = *_py_slice;
-        } else {
-            PyObject* owned_start = NULL;
-            PyObject* owned_stop = NULL;
-            if (_py_start) {
-                py_start = *_py_start;
-            } else {
-                if (has_cstart) {
-                    owned_start = py_start = PyInt_FromSsize_t(cstart);
-                    if (unlikely(!py_start)) goto bad;
-                } else
-                    py_start = Py_None;
-            }
-            if (_py_stop) {
-                py_stop = *_py_stop;
-            } else {
-                if (has_cstop) {
-                    owned_stop = py_stop = PyInt_FromSsize_t(cstop);
-                    if (unlikely(!py_stop)) {
-                        Py_XDECREF(owned_start);
-                        goto bad;
-                    }
-                } else
-                    py_stop = Py_None;
-            }
-            py_slice = PySlice_New(py_start, py_stop, Py_None);
-            Py_XDECREF(owned_start);
-            Py_XDECREF(owned_stop);
-            if (unlikely(!py_slice)) goto bad;
-        }
-#if CYTHON_USE_TYPE_SLOTS
-        result = mp->mp_subscript(obj, py_slice);
-#else
-        result = PyObject_GetItem(obj, py_slice);
-#endif
-        if (!_py_slice) {
-            Py_DECREF(py_slice);
-        }
-        return result;
-    }
-    obj_type_name = __Pyx_PyType_GetName(Py_TYPE(obj));
-    PyErr_Format(PyExc_TypeError,
-        "'" __Pyx_FMT_TYPENAME "' object is unsliceable", obj_type_name);
-    __Pyx_DECREF_TypeName(obj_type_name);
-bad:
-    return NULL;
 }
 
 /* GetItemInt */
@@ -7913,7 +9723,7 @@ __Pyx_PyType_GetName(PyTypeObject* tp)
     if (unlikely(name == NULL) || unlikely(!PyUnicode_Check(name))) {
         PyErr_Clear();
         Py_XDECREF(name);
-        name = __Pyx_NewRef(__pyx_n_s__11);
+        name = __Pyx_NewRef(__pyx_n_s__10);
     }
     return name;
 }
