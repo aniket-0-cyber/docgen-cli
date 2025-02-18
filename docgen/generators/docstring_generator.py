@@ -1,5 +1,5 @@
 # docgen/generators/docstring_generator.py
-from typing import Dict, List, Optional
+from typing import Dict, List
 from dataclasses import dataclass
 
 @dataclass

@@ -1,9 +1,7 @@
 import json
 from pathlib import Path
-import uuid
 import requests
 from typing import Optional, Tuple
-from datetime import datetime
 from ..utils.machine_utils import get_machine_id
 from docgen.config.urls import URLConfig
 

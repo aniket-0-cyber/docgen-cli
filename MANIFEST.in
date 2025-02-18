@@ -1,0 +1,11 @@
+include README.md
+include LICENSE
+include requirements.txt
+include version.txt
+recursive-include docgen/config *.json
+recursive-include docgen/templates *.md
+global-exclude *.pyx
+global-exclude *.py[cod]
+global-exclude __pycache__
+global-exclude *.so
+global-exclude *.c 
