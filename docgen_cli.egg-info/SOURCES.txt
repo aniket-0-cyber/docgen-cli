@@ -34,7 +34,3 @@ docgen_cli.egg-info/dependency_links.txt
 docgen_cli.egg-info/entry_points.txt
 docgen_cli.egg-info/requires.txt
 docgen_cli.egg-info/top_level.txt
-tests/test_cli.py
-tests/test_config.py
-tests/test_generator.py
-tests/test_git_utils.py
