@@ -69,9 +69,10 @@ class APIKeyRequired(Exception):
     pass
 def _show_api_key_instructions():
     """Helper function to show API key instructions."""
-    console.print("\nTo increase your limit, please:")
-    console.print(f"1. Get an API key at: {URLConfig.AUTH_BASE_URL}/get-api-key")
-    console.print("2. Run: docgen auth login --key YOUR_API_KEY")
+    console.print("\n[red]Monthly usage limit exceeded![/red]")
+    console.print("\nTo continue using DocGen, please:")
+    console.print(f"1. Get an API key at: https://docgen.dev")
+    console.print("2. Run: docgen auth login --key=YOUR_API_KEY")
 
 async def process_file(path: Path, output_format: str, output_dir: Optional[Path] = None) -> None:
     """Process any source code file and generate documentation."""
@@ -134,20 +135,49 @@ async def process_file(path: Path, output_format: str, output_dir: Optional[Path
         console.print(f"[red]Error processing {path}: {str(e)}[/red]")
 
 def should_process_file(file_path: Path, base_path: Path) -> bool:
-    """Check if the file should be processed."""
+    """Check if the file should be processed.
+    
+    Args:
+        file_path: Path to the file to check
+        base_path: Base directory path for relative path calculation
+        
+    Returns:
+        bool: True if file should be processed, False otherwise
+    """
+    # Common exclude patterns for directories
     exclude_patterns = {
-        'venv', 'env', '.env',
-        'site-packages', 
-        '__pycache__',
-        '.git',
-        '.pytest_cache',
-        'build', 'dist',
+        # Virtual environments
+        'venv', 'env', '.env', '.venv',
+        # Package directories
+        'site-packages', 'node_modules',
+        # Cache directories
+        '__pycache__', '.pytest_cache', '.mypy_cache',
+        # Build directories
+        'build', 'dist', '.build',
+        # Package info
         '*.egg-info',
-        'node_modules'
+        # Git directory
+        '.git',
+        # IDE directories
+        '.idea', '.vscode',
+        # Other common config directories
+        '.github', '.circleci', '.husky'
     }
     
-    rel_path = str(file_path.relative_to(base_path))
-    return not any(pattern in rel_path for pattern in exclude_patterns)
+    try:
+        rel_path = file_path.relative_to(base_path)
+        
+        # Check if any parent directory starts with a dot
+        for parent in rel_path.parents:
+            if parent.name.startswith('.'):
+                return False
+                
+        # Check if path contains any excluded pattern
+        path_str = str(rel_path)
+        return not any(pattern in path_str for pattern in exclude_patterns)
+        
+    except Exception:
+        return False
 
 @app.command(name="generate", help="Generate documentation for code", short_help="Generate docs")
 def generate(
@@ -163,10 +193,7 @@ def generate(
         can_request, _ = usage_tracker.can_make_request()
         
         if not can_request:
-            console.print("[red]Monthly usage limit exceeded![/red]")
-            console.print("To continue using DocGen, please:")
-            console.print("1. Get an API key at: https://your-website.com/get-api-key")
-            console.print("2. Run: docgen auth login --key YOUR_API_KEY")
+            _show_api_key_instructions()
             return
 
         # Validate path exists before proceeding
@@ -200,10 +227,7 @@ async def _generate_async(
         can_request, message = usage_tracker.can_make_request()
         
         if not can_request:
-            console.print("[red]Monthly usage limit exceeded![/red]")
-            console.print("To continue using DocGen, please:")
-            console.print("1. Get an API key at: https://your-website.com/get-api-key")
-            console.print("2. Run: docgen auth login --key=YOUR_API_KEY")
+            _show_api_key_instructions()
             return
         
         # Create a new status for file analysis
@@ -307,9 +331,6 @@ async def _generate_async(
         console.print(f"[blue]Time taken: {elapsed_time:.2f} seconds[/blue]")
         console.print(f"[blue]Processed {len(files_data)} source files ({total_size/1024:.1f} KB)[/blue]")
 
-        # Track the command after successful execution
-        console.print("[green]Documentation update completed successfully![/green]")
-
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")
 
@@ -409,10 +430,7 @@ def update_docs(
         can_request, message = usage_tracker.can_make_request()
         
         if not can_request:
-            console.print("[red]Monthly usage limit exceeded![/red]")
-            console.print("To continue using DocGen, please:")
-            console.print("1. Get an API key at: https://your-website.com/get-api-key")
-            console.print("2. Run: docgen auth login --key YOUR_API_KEY")
+            _show_api_key_instructions()
             raise typer.Exit(1)
         
         asyncio.run(_update_docs_async(output_dir, output_format, full_update, updates_file))
@@ -444,10 +462,7 @@ async def _update_docs_async(
         can_request, message = usage_tracker.can_make_request()
         
         if not can_request:
-            console.print("[red]Monthly usage limit exceeded![/red]")
-            console.print("To continue using DocGen, please:")
-            console.print("1. Get an API key at: https://your-website.com/get-api-key")
-            console.print("2. Run: docgen auth login --key YOUR_API_KEY")
+            _show_api_key_instructions()
             return
         
         start_time = time.time()
@@ -658,7 +673,7 @@ def auth(
     if command.lower() == "login":
         if not api_key:
             console.print("[yellow]Please provide an API key using --key option[/yellow]")
-            console.print("Get your API key at: https://your-website.com/get-api-key")
+            console.print("Get your API key at: https://docgen.dev")
             raise typer.Exit(1)
             
         success, plan = api_key_manager.validate_api_key(api_key)
