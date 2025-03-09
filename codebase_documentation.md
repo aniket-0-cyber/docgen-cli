@@ -1,1460 +1,92 @@
-
-# Recent Updates
-
-## Documentation Update (2025-03-09 11:42:32)
-
-### Changed Files:
-- docgen/generators/ai_doc_generator.py
-- docgen/utils/_machine_utils.cpp
-- docgen/utils/ai_client.py
-
-### Updates:
-
-#### docgen/generators/ai_doc_generator.py
-1
-
-**Purpose:** This file (`ai_doc_generator.py`) implements the core logic for generating documentation using an AI service. It manages caching, rate limiting, batch processing, and interacts with the `AIClient` to send requests and receive documentation.
-
-**Functionality:** The `AIDocGenerator` class is the central component. It handles:
-
-* **Initialization:** Sets up API key management, `AIClient` instance, cache directory, and rate limit parameters.  It also initializes a memory cache for faster lookups.
-* **Documentation Generation:** The `_generate_doc` method sends code to the AI service for documentation generation, incorporating retry logic with exponential backoff.
-* **Caching:** Uses both in-memory and file-based caching (`_get_cached_doc`, `_save_to_cache`, `_fast_cache_key`) to reduce redundant API calls.  Cache keys are generated based on code snippets and analysis data to efficiently identify similar code.
-* **Batch Processing:**  The `generate_documentation_batch` method processes multiple files concurrently, leveraging the `AIClient`'s batch capabilities.  It groups similar files (`_group_similar_files`, `_get_file_signature`) to minimize API requests.
-* **Update Documentation:**  Provides methods (`generate_update_documentation`, `generate_update_documentation_batch`, `_generate_update_doc`, `_process_update_group`) to handle generating documentation specifically for code changes.  This functionality is distinct from generating documentation for the entire codebase.
-* **Error Handling:** Includes comprehensive error handling throughout the process, logging warnings and errors using the `rich` library's console.
-
-
-**Relationships with other files:**
-
-* **Imports `ai_client.py`:**  This file heavily relies on the `AIClient` class (File 2) to interact with the AI service.  It uses the `AIClient` for both single file and batch documentation generation, as well as update documentation generation.
-* **`APIKeyManager` (from `docgen.auth.api_key_manager`):** Used for managing API keys for authentication with the AI service.
-* **`URLConfig` (implicitly, through `AIClient`):** Configuration for AI service URLs is accessed indirectly via the `AIClient`.
-
-
-**Interaction with other files:**  This file acts as the primary interface for generating documentation. It orchestrates the process, leveraging the `AIClient` (File 2) for network communication and employing caching strategies to optimize performance. The changes highlight improvements in batch processing and error handling for both initial documentation and update documentation generation. The addition of file paths to the API requests enables more accurate tracking and caching.
----
-
-#### docgen/utils/_machine_utils.cpp
-2
-
-**Purpose:** This file (`ai_client.py`) provides a client for interacting with the AI documentation generation service. It handles network requests, rate limiting, batching, and caching.
-
-**Functionality:** The `AIClient` class manages:
-
-* **Connection Pooling:** Uses `requests` and `aiohttp` for efficient connection management and concurrent requests.  The session is configured with connection pooling and retry mechanisms for improved robustness.
-* **Rate Limiting:** Implements rate limiting using an asynchronous lock and a sliding window approach to avoid exceeding the API's rate limits.
-* **Batching:** Optimizes requests by batching multiple files together, significantly reducing the number of individual API calls.  The batch size and token limits are configurable.
-* **Caching:**  Provides methods to store and retrieve documentation from a local cache (`_get_cached_doc`, `_save_to_cache`). Cache keys are generated using a `_fast_cache_key` method that incorporates the code and analysis data, and the operation type (generate or update).
-* **Error Handling:** Includes error handling for network issues, API errors, and other exceptions.  It attempts retries and handles rate limit errors gracefully.
-* **API Key Management:** Uses `APIKeyManager` for secure API key management.
-* **Usage Tracking:**  The `_track_usage` method sends usage data to a separate tracking service.
-
-**Relationships with other files:**
-
-* **Imported by `ai_doc_generator.py`:** The `AIDocGenerator` class (File 1) extensively uses the `AIClient` to send requests to the AI service.
-* **Imports `APIKeyManager` (from `docgen.auth.api_key_manager`):**  Used for obtaining and managing API keys.
-* **Imports `URLConfig` (from `docgen.config.urls`):**  Used to obtain the base URLs of the AI servers.
-
-**Interaction with other files:** This file is used by `ai_doc_generator.py` (File 1) to make asynchronous requests to the AI service. The changes reflect improvements in rate limiting, connection pooling, and batching for increased efficiency and robustness. The addition of caching improves performance by reducing the number of requests made to the AI service. The addition of operation type to cache key ensures that different operation results are cached separately.  The improved error handling and more robust cache management make the system more reliable.
-
-
-**Critical Notes:**
-
-* Both files use caching extensively.  The cache invalidation strategy should be carefully considered to ensure data consistency.  The current implementation uses timestamps and file unlinking to manage expired cache entries.
-* The rate limiting parameters are crucial and should be adjusted based on the AI service's actual limits.
-* Error handling is implemented, but further improvements might be necessary to handle specific error conditions more effectively.  The use of more descriptive error messages would be beneficial.
-* The token estimation method is a simple heuristic and might not be perfectly accurate.  A more sophisticated approach could be considered for improved batching.  The server's tokenization method should ideally be mirrored for more precise batching.
----
-
-#### docgen/utils/ai_client.py
-1
-
-This file, `docgen/utils/_machine_utils.pyx`, is a Cython file that generates a unique machine identifier.  It's a crucial part of a larger `docgen` system, likely responsible for uniquely identifying machines for documentation generation purposes. The Cython code indicates it's compiled to C++ for performance.
-
-**Purpose:** To create and cache a stable, unique identifier for the machine the code is running on. This ID is used to distinguish different machines within the `docgen` system, possibly for tracking generated documentation or managing configurations.
-
-**Functionality:** The core function, `get_machine_id()`, attempts to retrieve a cached ID first. If not found, it generates a new ID using a combination of stable hardware information and a SHA256 hash.  The generation process involves:
-
-1. **Gathering system information:** The `_get_stable_system_info()` function collects data (MAC address and OS-specific hardware identifiers) that are relatively stable across system reboots.
-2. **Hashing the information:**  The collected information is concatenated, encoded, and then hashed using SHA256 from the `hashlib` library.  This ensures a consistent and compact representation.
-3. **Caching the ID:** The generated ID is stored in a cache file (`~/.docgen/cache/.machine_id`) using the `_save_machine_id()` function. This avoids repeatedly generating the ID.
-4. **Fallback mechanism:** If the initial ID generation fails (due to missing hardware information or permissions issues), a fallback ID is created using the machine's MAC address obtained via the `uuid` library's `getnode()` function.
-
-**Relationships with other files:**
-
-* **Dependencies:** This file depends on the `hashlib`, `platform`, `uuid`, and `os` Python libraries.  On Windows, it also depends on `win32api` and `win32security`.  The `wmi` library is used optionally for retrieving BIOS serial number on Windows.
-* **Interactions:** This file does not directly interact with other files in the system, but it is likely *used* by other modules within the `docgen` system which need a unique machine identifier.  Other modules would call the `get_machine_id()` function to obtain the ID.
-
-
-**Critical Notes:**
-
-* The code uses a fallback mechanism based on the MAC address, which might not be completely unique or stable in all environments.
-* Error handling is minimal;  a more robust approach might involve logging errors or providing more informative error messages.
-* The code assumes the existence of certain files and directories in specific locations, which may not be true across all Linux distributions.  More flexible path handling would improve portability.
-* The Cython code includes extensive preprocessor directives for compatibility with various Python versions and interpreters. This complexity suggests a significant effort to maintain cross-platform compatibility.  The changes made only updated the Cython version number.
-
-
-The change from Cython 3.0.11 to 3.0.12 is a minor version bump, primarily affecting the generated code's metadata and potentially some internal compiler optimizations.  It's unlikely to have a significant impact on the functionality or interaction with other files unless there were subtle bug fixes or changes in the Cython compiler itself that impacted the generated C++ code.  No functional changes are apparent in the provided diff.
----
-
-
-## Documentation Update (2025-02-04 04:13:19)
-
-### Changed Files:
-- docgen/auth/api_key_manager.py
-- docgen/auth/usage_tracker.py
-- docgen/cli.py
-- docgen/config/config_handler.py
-- docgen/generators/ai_doc_generator.py
-- docgen/generators/docstring_generator.py
-- docgen/utils/git_utils.py
-- setup.py
-- test_env/bin/Activate.ps1
-- test_env/bin/activate.fish
-- test_install_env/bin/Activate.ps1
-- test_install_env/bin/activate.fish
-
-### Updates:
-
-#### docgen/auth/api_key_manager.py
-1
-
-1. **Changed functionality:** Removed unnecessary imports (`uuid`, `datetime`).
-
-2. **Impact of changes:** Reduced code size and dependencies. No functional change.
-
-3. **Critical notes:** None.  The code remains functionally equivalent, but is slightly more efficient.
----
-
-#### docgen/auth/usage_tracker.py
-2
-
-1. **Changed functionality:** Removed unnecessary imports (`hashlib`, `platform`, `uuid`, `json`, `pathlib`, `datetime`, `cryptography.fernet`, `base64`, `os`).
-
-2. **Impact of changes:** Reduced code size and dependencies. No functional change.
-
-3. **Critical notes:** None. The code remains functionally equivalent, but is slightly more efficient.
----
-
-#### docgen/cli.py
-3
-
-1. **Changed functionality:** Removed `ThreadPoolExecutor` import and related code.  Removed print statement in `usage()` function.
-
-2. **Impact of changes:** Simplified the code, removing unnecessary concurrency management. The `usage()` function no longer prints raw JSON.
-
-3. **Critical notes:** The removal of the `ThreadPoolExecutor` might slightly impact performance for large codebases, but the overall impact is likely minimal given the asynchronous nature of other parts of the code.  The removal of the print statement in `usage()` improves the function's clarity and prevents accidental output of sensitive data.
----
-
-#### docgen/config/config_handler.py
-1
-
-1. **Changed functionality:** Removed unnecessary imports (`Dict`, `Any`, `typer`).
-
-2. **Impact of changes:**  Minor code simplification.  The removed imports were not used in the final version of the code.
-
-3. **Critical notes:** None.  The change is purely cosmetic and doesn't affect functionality.
----
-
-#### docgen/generators/ai_doc_generator.py
-2
-
-1. **Changed functionality:** Removed imports related to asynchronous operations and thread pools (`os`, `asyncio`, `concurrent.futures`).  The code now relies solely on multiprocessing for concurrency.
-
-2. **Impact of changes:** The code is no longer asynchronous. Concurrency is now handled using `multiprocessing` instead of `asyncio` and `ThreadPoolExecutor`. This might affect performance depending on the I/O-bound nature of the AI calls.  If the AI client is I/O-bound, `multiprocessing` may be less efficient than `asyncio`.
-
-3. **Critical notes:**  The change from asynchronous to synchronous processing could significantly impact performance if the AI client is I/O-bound. Thorough testing is needed to ensure the performance meets requirements.  Consider reverting to asynchronous operations if performance degrades significantly.
----
-
-#### docgen/generators/docstring_generator.py
-3
-
-1. **Changed functionality:** Removed `Optional` import from typing.
-
-2. **Impact of changes:** Minor code simplification. The `Optional` type hint was likely unnecessary and has been removed for cleaner code.
-
-3. **Critical notes:** None. The change is inconsequential to the functionality of the code.
----
-
-#### docgen/utils/git_utils.py
-1
-
-1. **Changed functionality:** The `typing` import statement was modified to remove `List` and `Optional` imports, as they are no longer used in the provided code snippet.
-
-2. **Impact of changes:** This change simplifies the imports and doesn't affect the core functionality of the `GitAnalyzer` class.  The code remains functionally equivalent.
-
-3. **Critical notes:** None.
----
-
-#### setup.py
-2
-
-1. **Changed functionality:**
-    * The version is now read from a `version.txt` file if it exists, otherwise defaults to "1.0.0".
-    * Author name and email have been replaced with placeholder values.  These should be updated with the actual author information.
-    * The project URL, bug reports URL, and source URL now point to a private GitHub repository (placeholder URL provided, needs updating).
-    * The `install_requires` section has been significantly expanded to include several new dependencies (`google-api-python-client`, `google-auth`, `esprima`, `javalang`, `python-dotenv`, `requests`, `tqdm`, `pydantic`, `ratelimit`, `cryptography`).
-    * Development dependencies (`pytest`, `black`, `isort`, `mypy`, `pytest-cov`, `pytest-asyncio`) are now defined in `extras_require`.
-    * The `Development Status` classifier has been changed from "3 - Alpha" to "4 - Beta".
-    * Keywords have been added for better discoverability.
-
-
-2. **Impact of changes:** The changes significantly enhance the project's functionality and metadata.  The addition of new dependencies indicates an expansion of the project's capabilities, likely incorporating features related to Google APIs, code parsing (Esprima, Javalang), and improved error handling. The `extras_require` section improves the developer experience.  The change in development status suggests the project is nearing a more stable release.
-
-3. **Critical notes:**  The placeholder author information and repository URLs must be replaced with the correct values before deployment.  Carefully review the added dependencies to ensure compatibility and security.  The `version.txt` file must be created and managed appropriately for version control.
----
-
-#### test_env/bin/Activate.ps1
-1
-
-1. **Changed functionality:** No functional changes were made to the code in File 1.  The code is identical in both the "Original Code" and "Changes" sections.
-
-2. **Impact of changes:** No impact, as there were no changes.
-
-3. **Critical notes:** None.
----
-
-#### test_env/bin/activate.fish
-2
-
-1. **Changed functionality:** No functional changes were made to the code in File 2. The code is identical in both the "Original Code" and "Changes" sections.
-
-2. **Impact of changes:** No impact, as there were no changes.
-
-3. **Critical notes:**  The file is a Fish shell activation script. It's crucial to understand that this script should not be run directly but sourced using `source <venv>/bin/activate.fish` within a Fish shell environment.
----
-
-#### test_install_env/bin/Activate.ps1
-3
-
-1. **Changed functionality:** No functional changes were made. The code is identical in both the "Original Code" and "Changes" sections, except for the file path in the "Changes" section which suggests a different virtual environment location (`test_install_env` instead of `test_env`).
-
-2. **Impact of changes:** The only difference is the file path, implying the script now activates a virtual environment located at `test_install_env` instead of `test_env`. This is a change in the *location* of the activated environment, not a change in the script's functionality itself.
-
-3. **Critical notes:**  The file path change suggests a different virtual environment is targeted. Ensure the `test_install_env` directory exists and contains a correctly configured virtual environment.  Like File 1, this is a PowerShell script.  The user may need to adjust execution policies as noted in the script's comments.
----
-
-#### test_install_env/bin/activate.fish
-1
-
-**Original Code:** A Fish shell script (`activate.fish`) for activating a Python virtual environment.  It modifies the `PATH` environment variable, handles `PYTHONHOME`, and customizes the shell prompt to indicate the active virtual environment.  It also includes a `deactivate` function to revert these changes.
-
-**Changes:** No functional changes were made. The provided "Changes" section shows an identical copy of the original code.
-
-**Impact of Changes:** No impact, as no changes were implemented.
-
-**Critical Notes:** The file is designed to be sourced using `source <venv>/bin/activate.fish` from within Fish shell; it cannot be executed directly.  The script relies on Fish-specific commands (`functions`, `set -q`, `set_color`).  It modifies global environment variables.  The prompt customization assumes a pre-existing `fish_prompt` function.
----
-
-
-## Documentation Update (2025-02-03 03:27:02)
-
-### Changed Files:
-- docgen/config/urls.py
-- setup.py
-
-### Updates:
-
-#### docgen/config/urls.py
-1
-
-1. **Changed functionality:**
-    * Reduced the number of base URLs for AI servers from multiple to two (`https://api1.docgen.dev`, `https://api2.docgen.dev`).
-    * Modified the `AUTH_BASE_URL` to use the second server URL in `SERVER_URLS`.
-
-2. **Impact of changes:**
-    * Simplifies the configuration by reducing the number of server endpoints.
-    * Potentially improves reliability by consolidating authentication to a single server.
-    * Requires updating any code that relied on the previous multiple server URLs and their specific assignments to `AUTH_BASE_URL`.
-
-3. **Critical notes:**  The change in server URLs may require updating deployed instances and client applications that interact with these endpoints.  Ensure proper testing after deployment.
----
-
-#### setup.py
-2
-
-1. **Changed functionality:**
-    * Updated author name and email.
-    * Changed description to "AI-Powered Documentation Generator for Developers".
-    * Added project URLs for Bug Tracker and Documentation.
-    * Updated `Development Status` to "4 - Beta".
-    * Added versioning from `version.txt`.
-    * Added `include_package_data=True` to include package data.
-    * Added keywords for better searchability.
-    * Added several dependencies: `esprima`, `javalang`, `google-generativeai`, `aiohttp`, `python-dotenv`, `requests`, `tqdm`, `pydantic`.
-
-
-2. **Impact of changes:**
-    * Improved project metadata for better discoverability and maintainability.
-    * Added functionality by including new dependencies, implying new features related to AI, asynchronous operations, environment variables, and data validation.
-    * The versioning mechanism allows for easier management of different releases.
-
-
-3. **Critical notes:**  The addition of new dependencies requires careful consideration of their licensing and potential conflicts with existing code. Thorough testing is crucial after these changes to ensure compatibility and functionality.  The placeholder URLs in `setup.py` should be replaced with actual repository URLs.
----
-
-
-## Documentation Update (2025-02-02 12:22:02)
-
-### Changed Files:
-- docgen/cli.py
-
-### Updates:
-
-#### docgen/cli.py
-1
-
-* **Added status indicators:**  `console.status` is now used to display progress during file analysis and documentation generation, improving user experience.
-* **Improved error handling:** More robust error handling within the `_generate_async` function prevents crashes due to issues with individual files.  Large files (>1MB) are now skipped gracefully.
-* **Refactored code structure:** The code within `_generate_async` is restructured to improve readability and maintainability.  Error handling is now more centralized.
-* **No significant impact on core functionality:** The changes primarily enhance the user experience and the robustness of the `generate` command.
-* **Critical notes:** None.
----
-
-
-## Documentation Update (2025-02-02 05:58:21)
-
-### Changed Files:
-- backend/src/models/usage.py
-- docgen/auth/api_key_manager.py
-- docgen/auth/usage_tracker.py
-- docgen/cli.py
-- docgen/utils/ai_client.py
-- docgen/config/urls.py
-
-### Updates:
-
-#### backend/src/models/usage.py
-1
-
-1. **Changed functionality only (bullet points):**
-    * Removed `request_type`, `timestamp`, and `count` fields from the `Usage` Pydantic model.
-    * Made `machine_id` a required field (removed `Optional`).
-    * Added `count`, `last_used`, and `created_at` fields to the `Usage` Pydantic model.  `count` defaults to 0, `last_used` and `created_at` are optional.
-
-2. **Impact of changes:** The `Usage` model now tracks different information.  The removal of fields suggests a change in how usage data is recorded and potentially a simplification of the data structure.  The addition of `count`, `last_used`, and `created_at` implies a focus on tracking usage frequency and timestamps.
-
-3. **Critical notes (if any):**  The change might break code relying on the previous structure of the `Usage` model.  Consider backward compatibility if necessary.  The addition of a `count` field may need additional logic to increment it correctly in the application.
----
-
-#### docgen/auth/api_key_manager.py
-2
-
-1. **Changed functionality only (bullet points):**
-    * Changed the URL used for API key validation from a hardcoded URL (`'http://0.0.0.0:8000/api/v1/auth/verify-key'`) to a dynamically configured URL (`f"{URLConfig.AUTH_BASE_URL}/verify-key"`) using `URLConfig`.
-    * Removed the `machine_id` from the JSON payload sent during API key validation.
-
-2. **Impact of changes:** The API key validation is now more flexible and configurable. The URL for the authentication service can be changed by modifying the `URLConfig` object, improving maintainability and deployment flexibility.  Removing `machine_id` from the validation request simplifies the API interaction.
-
-3. **Critical notes (if any):** Ensure that `URLConfig.AUTH_BASE_URL` is correctly configured.  The removal of `machine_id` from the validation request might affect the server-side logic if it relied on that parameter for identification.  Verify server-side changes to match the new client-side implementation.
----
-
-#### docgen/auth/usage_tracker.py
-3
-
-1. **Changed functionality only (bullet points):**
-    * Changed the base URL for API calls from a hardcoded URL (`"http://0.0.0.0:8000/api/v1/usage"`) to a dynamically configured URL (`URLConfig.USAGE_BASE_URL`) using `URLConfig`.
-
-2. **Impact of changes:** The usage tracking is now more flexible and configurable.  The URL for the usage tracking service can be changed by modifying the `URLConfig` object, improving maintainability and deployment flexibility.
-
-3. **Critical notes (if any):** Ensure that `URLConfig.USAGE_BASE_URL` is correctly configured.  The change might require updating any deployment or configuration scripts that previously relied on the hardcoded URL.  Verify that the API endpoints at the new URL are correctly implemented and accessible.
----
-
-#### docgen/cli.py
-1
-
-1. **Changed functionality:** The `_show_api_key_instructions()` function now uses `URLConfig.AUTH_BASE_URL` to dynamically generate the API key retrieval URL instead of a hardcoded URL.  The URLs used in the `generate` and `update` commands for usage limit exceeded messages are now also dynamically generated from `URLConfig`.  The `auth logout` command now sends a logout request to the server using `URLConfig.AUTH_BASE_URL`. The `usage` command now uses `URLConfig.USAGE_BASE_URL` to fetch usage statistics.
-
-2. **Impact of changes:** This improves maintainability and flexibility.  The code is no longer tied to specific URLs, making it easier to update or deploy to different environments.
-
-3. **Critical notes:** None.
----
-
-#### docgen/utils/ai_client.py
-2
-
-1. **Changed functionality:** The `AIClient` class now uses `URLConfig.SERVER_URLS` to get the AI server URLs instead of hardcoded values. The `_make_request` function's retry logic has been adjusted (reduced retries and timeout), and the rate limiting parameters have been modified (`RATE_LIMIT_REQUESTS`, `RATE_LIMIT_WINDOW`) for improved throughput. The maximum batch size (`MAX_BATCH_SIZE`) and token limit (`MAX_BATCH_TOKENS`) for batch requests have been increased.  The `AIClient` now includes caching functionality using `_get_cached_doc` and `_save_to_cache` methods, utilizing MD5 hashing for cache keys.  The `_track_usage` method is added to track API usage.
-
-
-2. **Impact of changes:** These changes improve the robustness, efficiency, and performance of the AI client.  Increased batch sizes reduce the number of API calls, leading to faster processing. The caching mechanism significantly reduces redundant API requests.  The use of `URLConfig` makes the code more adaptable to different server configurations.  The rate limit adjustments improve throughput while adhering to API constraints.
-
-3. **Critical notes:**  The cache relies on the stability of the MD5 hash for key generation.  Any changes to the code structure used to generate the cache key will invalidate existing cached entries.  Error handling around cache operations should be robust to prevent data corruption.
----
-
-#### docgen/config/urls.py
-3
-
-1. **Changed functionality:** No functional changes were made to this file in the provided diffs. The file remains unchanged.
-
-2. **Impact of changes:** No impact.
-
-3. **Critical notes:**  The `SERVER_URLS` list hardcodes server addresses.  Consider using environment variables or a configuration file to make this more flexible.  The dependency on the first element of `SERVER_URLS` in `USAGE_BASE_URL` and the third element in `AUTH_BASE_URL` introduces a potential point of failure if the order of servers changes.  Using a more robust method to specify these base URLs would be beneficial.
----
-
-
-## Documentation Update (2025-02-02 04:01:15)
-
-### Changed Files:
-- docgen/cli.py
-- docgen/utils/ai_client.py
-
-### Updates:
-
-#### docgen/cli.py
-1
-
-1. **Changed functionality:** The maximum file size limit for skipping large files in the `_generate_async` function within the `generate` command was changed from 2MB to 1MB.
-
-2. **Impact of changes:** This change reduces the processing time for large codebases by skipping even more large files, potentially improving overall performance.  It also conserves API usage by avoiding large requests.
-
-3. **Critical notes:** None.
----
-
-#### docgen/utils/ai_client.py
-2
-
-1. **Changed functionality:**
-    * The `_estimate_tokens` function now uses a more accurate token estimation method (4 characters per token) instead of word count.
-    * The retry mechanism in `_make_batch_request` has been simplified, removing unnecessary retries for faster failure handling.  The loop in `_make_request` was also reduced to a single attempt.
-    * The `_make_batch_request` function now explicitly handles cases where the server returns more or fewer results than requested, ensuring a consistent response size.  It adds padding or trims results as needed.
-    * Added a cache mechanism using MD5 hashing to store and retrieve generated documentation, significantly improving performance for repeated runs on unchanged code.  The cache expires after one day.  The cache key now includes the operation type ('generate' or 'update').
-    * The `generate_update_documentation_batch` function now includes changes in the cache key for updates, ensuring that updates are correctly cached and retrieved.
-    * Increased concurrency limits (semaphore, connector limits, pool sizes) for improved throughput.
-    * Reduced retry parameters and backoff factor in `_create_session` for faster retries.
-    * Added versioning to the cache file for future compatibility.
-    * Improved error handling in `_get_cached_doc` and `_save_to_cache` including cleanup of corrupted cache files and temporary files.
-    * Added usage tracking to monitor API calls.
-
-2. **Impact of changes:** These changes significantly improve the performance and efficiency of the AI client. Batching, caching, and optimized request handling reduce the number of requests to the AI server and improve overall response times, especially for larger codebases.  More robust error handling and cache management enhance reliability.
-
-3. **Critical notes:** The accuracy of token estimation still relies on a simplification (4 characters per token).  The cache mechanism assumes a specific structure for cached data.  Improperly formatted cache data will be deleted.  The usage tracking depends on the availability of the specified URL.
----
-
-
-## Documentation Update (2025-02-01 05:48:03)
-
-### Changed Files:
-- docgen/auth/api_key_manager.py
-- docgen/auth/usage_tracker.py
-- docgen/cli.py
-- docgen/utils/ai_client.py
-- backend/src/models/usage.py
-- docgen/utils/machine_utils.py
-
-### Updates:
-
-#### docgen/auth/api_key_manager.py
-1
-
-1. **Changed functionality:** The `config.json` file is now used instead of `auth.json`. The `set_api_key` and `validate_api_key` methods have been simplified; they no longer store the plan or verification timestamp.  The `validate_api_key` function now includes the `machine_id` in the validation request.
-
-2. **Impact of changes:** The code is now cleaner and more focused on core API key management.  The removal of plan and timestamp storage simplifies the configuration file. The inclusion of `machine_id` in validation enhances security.
-
-3. **Critical notes:**  The hardcoded API URL (`http://0.0.0.0:8000/api/v1/auth/verify-key`) should be replaced with a configurable or environment variable for production use. Error handling in `_load_config` is rudimentary and could be improved for better robustness.
----
-
-#### docgen/auth/usage_tracker.py
-2
-
-1. **Changed functionality:** The entire usage tracking mechanism has been changed from local file-based tracking with encryption to relying entirely on a remote server API (`http://0.0.0.0:8000/api/v1/usage`).  All local storage and encryption related code has been removed.
-
-2. **Impact of changes:**  The code is significantly simplified.  All usage tracking logic is now handled by the server, removing the need for local file management and encryption. This simplifies the client-side code and improves maintainability.  However, it introduces a dependency on the availability and correctness of the remote server.
-
-3. **Critical notes:** The reliance on a remote server for usage tracking is a significant change.  The server's availability and reliability directly impact the functionality of this code. Robust error handling and fallback mechanisms should be implemented to handle server unavailability.  The hardcoded API URL (`http://0.0.0.0:8000/api/v1/usage`) needs to be replaced with a configurable or environment variable for production use.
----
-
-#### docgen/cli.py
-3
-
-1. **Changed functionality:** Added `import requests` to the top of the file to ensure that the `requests` library is available for use. Updated the `usage` command to fetch usage statistics directly from the server via HTTP requests, removing reliance on the local `UsageTracker`'s internal state.
-
-2. **Impact of changes:** The `usage` command now directly reflects the server's view of usage, eliminating potential inconsistencies between local and server-side usage data. This improves accuracy and reduces the risk of discrepancies.
-
-3. **Critical notes:** The functionality of the `usage` command is now entirely dependent on the availability and correctness of the server's API.  Error handling around network requests and API responses should be improved to provide more informative error messages to the user.  The server's API endpoint (`http://0.0.0.0:8000/api/v1/usage/check`) needs to be correctly configured and accessible.
----
-
-#### docgen/utils/ai_client.py
-2
-
-1. **Changed functionality only:** Added `_track_usage` method for tracking API usage.  Various performance optimizations throughout the class, including increased connection pool sizes, reduced retry attempts, and adjusted rate limiting parameters.  Improved cache handling with versioning and more robust error handling during cache read/write operations.  Added cache clearing functionality (`_clear_cache`).
-
-2. **Impact of changes:** The performance optimizations aim to improve throughput and reduce latency. The `_track_usage` method adds API usage tracking capabilities. The cache improvements enhance reliability and data integrity. The addition of cache clearing provides a mechanism for cache management.
-
-3. **Critical notes:** The changes to rate limiting and retry strategies might need careful monitoring to ensure they don't introduce unintended consequences, such as exceeding API limits or masking actual errors.  The usage tracking endpoint ("http://0.0.0.0:8000/api/v1/usage/track") uses a localhost address which is not suitable for production.  The cache uses a simple file-based approach which may not scale well for very large caches.
----
-
-#### backend/src/models/usage.py
-3
-
-1. **Changed functionality only:** No changes detected in the provided diff. The file content is identical in both the original and changed code snippets.
-
-2. **Impact of changes:** No impact, as there were no changes.
-
-3. **Critical notes:** The provided diff shows no changes.  It's possible the diff is incorrect or incomplete.
----
-
-#### docgen/utils/machine_utils.py
-3
-
-1. **Changed functionality:** No functional changes were made to the code.  The provided "Changes" section shows identical code.
-
-2. **Impact of changes:** No impact.
-
-3. **Critical notes:** The `_get_cpu_info` function for non-Windows systems relies on parsing `/proc/cpuinfo`. This approach might be fragile and could break if the format of `/proc/cpuinfo` changes across different Linux distributions.  More robust parsing or alternative methods should be considered.  Error handling is minimal; more comprehensive error handling would improve robustness.
----
-
-
-## Documentation Update (2025-01-25 12:08:12)
-
-### Changed Files:
-- docgen/cli.py
-- docgen/generators/markdown_generator.py
-- docgen/utils/ai_client.py
-
-### Updates:
-
-#### docgen/cli.py
-1
-
-* **Changed functionality:** The table of contents generation in the `_generate_async` function was modified.  The links to individual files within the table of contents are now removed.  The anchors remain in place for internal linking within the generated document.
-
-* **Impact of changes:** The generated documentation now has a simpler table of contents, without hyperlinks to each section.  This simplifies the structure, but users will need to manually navigate to the specific file documentation.
-
-* **Critical notes:** No critical notes.  This change is primarily stylistic and might affect user experience if they relied on the previous linked table of contents.
----
-
-#### docgen/generators/markdown_generator.py
-2
-
-* **Changed functionality:** The docstrings for `generate_file_documentation`, `_generate_class_markdown`, and `_generate_function_markdown` have been updated for clarity.  The language-specific code fences (```python```) in `_generate_class_markdown` and `_generate_function_markdown` have been removed, making the generated markdown more generic.
-
-* **Impact of changes:** The functions now generate more generic markdown, not specifically tailored to Python.  The docstrings are improved for better understanding.
-
-* **Critical notes:** No critical notes.  The change in code fences allows for broader language support but may require adjustments if the target is specifically Python markdown.
----
-
-#### docgen/utils/ai_client.py
-3
-
-* **Changed functionality:** The `base_urls` in the `AIClient` class initializer have been changed from localhost ports to a set of specific IP addresses and ports.
-
-* **Impact of changes:** The AI client now connects to a specific set of remote servers instead of a locally running server.  This requires the remote servers to be available and correctly configured.
-
-* **Critical notes:** This change fundamentally alters the deployment and requires access to the specified external servers.  The previous localhost setup is removed.  Error handling and connection management are critical to ensure robust operation.
----
-
-
-## Documentation Update (2025-01-23 13:45:58)
-
-### Changed Files:
-- docgen/cli.py
-- docgen/utils/ai_client.py
-
-### Updates:
-
-#### docgen/cli.py
-1
-
-* **Changed functionality:** The `AIClient` import was commented out (`# from docgen.utils.ai_client import AIClient`).
-
-* **Impact of changes:**  This likely means the AI client interaction has been moved or refactored into a different module.  The `cli.py` file now relies on a different implementation for AI interaction, potentially for improved modularity or to address dependency issues.
-
-* **Critical notes:** None.  The change is a refactoring and does not appear to introduce any critical issues, assuming the functionality is still provided elsewhere.
----
-
-#### docgen/utils/ai_client.py
-2
-
-* **Changed functionality:**
-    * Added caching mechanism using `hashlib`, `json`, `pathlib`, and `datetime` modules.  A cache directory is created in `~/.docgen/cache`.  Cache entries expire after one day.
-    * Improved rate limiting:  Increased `RATE_LIMIT_REQUESTS` to 15 and maintained `RATE_LIMIT_WINDOW` at 60 seconds.  Adjusted retry logic and backoff factor in the session creation.
-    * Increased concurrency:  Increased the semaphore value to 50 and connection pool sizes to 50.
-    * Batching improved:  Increased `MAX_BATCH_SIZE` and `MAX_BATCH_TOKENS`.
-    * Added error handling for cache read/write operations, including cleanup of corrupted cache files.
-    * `_fast_cache_key` function now includes operation type ('generate' or 'update') to differentiate cache keys.
-    * Added versioning to cached data.
-    * `generate_text_batch` and `generate_update_documentation_batch` now utilize caching.
-    * Retries reduced in `_make_request` for faster failure detection.
-    * Timeout reduced in `_make_request`.
-
-* **Impact of changes:** The changes significantly enhance the performance and efficiency of the AI client.  Batching, concurrency, and caching are implemented to handle larger codebases more effectively and reduce the number of requests to the AI server.  Improved error handling and rate limiting make the system more robust.
-
-* **Critical notes:** The caching mechanism relies on the assumption that the code and analysis results remain relatively stable within a day.  Significant changes within that timeframe might lead to stale cache entries.  The cache key generation should be carefully reviewed to ensure uniqueness and avoid collisions, especially considering the use of only the first 100 characters of code.  The error handling attempts to gracefully handle cache issues, but it's still crucial to monitor for unexpected behavior.  The assumption is that the API supports batch requests (`/api/v1/gemini/generate/batch`).
----
-
-
-## Documentation Update (2025-01-23 12:52:13)
-
-### Changed Files:
-- docgen/utils/ai_client.py
-
-### Updates:
-
-#### docgen/utils/ai_client.py
-1
-
-**1. Changed Functionality:**
-
-*   Increased concurrency limit for asynchronous requests from 10 to 50.
-*   Adjusted rate limiting parameters (`RATE_LIMIT_REQUESTS`, `RATE_LIMIT_WINDOW`) for improved throughput.
-*   Increased maximum batch size (`MAX_BATCH_SIZE`) and token limit (`MAX_BATCH_TOKENS`) for fewer requests.
-*   Reduced retry attempts in `_make_request` from 2 to 1 for faster failure handling.
-*   Reduced retry timeout in `_make_request` from 30 to 15 seconds.
-*   Reduced retry attempts in `_make_batch_request` from 3 to 2.
-*   Reduced `backoff_factor` in retry strategy from 0.1 to 0.05 for faster retries.
-*   Increased connection pool size in `_create_session` from 20 to 50.
-*   Reduced total retry attempts in `_create_session` from 3 to 2.
-*   `generate_text_batch` now processes batches concurrently using `asyncio.gather`.
-*   Improved error handling in `generate_update_documentation_batch`.
-*   Added `finally` block in `generate_update_documentation_batch` to ensure session closure.
-
-
-**2. Impact of Changes:**
-
-The changes aim to significantly improve the performance and efficiency of the AI client. Increased concurrency, larger batch sizes, and faster retry strategies should lead to faster processing of requests and better handling of rate limits and server errors.  The reduced retry attempts prioritize faster failure detection.
-
-**3. Critical Notes:**
-
-*   The code assumes the existence of `docgen.auth.api_key_manager`.  Ensure this module is correctly configured and available.
-*   The token estimation (`_estimate_tokens`) is a very rough approximation.  More sophisticated tokenization might be necessary for accurate batching.
-*   The rate limiting parameters might need further adjustment based on the actual server's capabilities and response times.  Careful monitoring is recommended.
-*   Error handling relies heavily on catching generic `Exception` objects. More specific exception handling might be beneficial for better debugging.
----
-
-
-## Documentation Update (2025-01-16 13:16:02)
-
-### Changed Files:
-- docgen/cli.py
-- docgen/generators/ai_doc_generator.py
-
-### Updates:
-
-#### docgen/cli.py
-1. **Modified Feature:**  The `docgen auth login` command invocation instruction within the usage limit exceeded message in the `_generate_async` function has been updated.
-
-
-2. **Usage Example (Illustrative):** The change doesn't affect usage; the error message is updated.  Before:  `2. Run: docgen auth login --key YOUR_API_KEY` After: `2. Run: docgen auth login --key=YOUR_API_KEY`
-
-
-3. **Important Notes:** The `--key` option in the `docgen auth login` command now requires an equals sign (`=`) before the API key value for correct parsing.  This is a minor update to command-line argument handling for consistency.
-
----
-
-#### docgen/generators/ai_doc_generator.py
-## Code Changes: AIDocGenerator Class
-
-1. **Removed Template-Based Documentation Adaptation:** The `_process_file_group` and `_process_update_group` methods no longer use templates to adapt documentation for similar files.  Instead, they generate documentation individually for each file using  `_generate_doc` and `_generate_update_doc` respectively. This eliminates the previous behavior of reusing a template and applying adaptations based on detected class and function names.  The `_adapt_template` function is now effectively dead code.
-
-
-2. **Modified Cache Key Generation:** The `_fast_cache_key` method now accepts a `query` boolean parameter.  If `query` is `True` (as used in update processing),  "update" is appended to the key content, distinguishing update documentation from the original documentation in the cache. This ensures that updates are cached separately.
-
-3. **Simplified Update Documentation Generation:** The logic in `_process_file_group` and `_process_update_group` is simplified to generate documentation directly for each file rather than trying to reuse a template.
-
-
-
-**Simple Usage Example (Illustrative - adapt to your specific file data):**
-
-```python
-generator = AIDocGenerator()
-files_data = [
-    (Path("file1.py"), {"classes": [{"name": "ClassA"}], "functions": []}, "code1"),  # Example file data
-    (Path("file2.py"), {"classes": [{"name": "ClassB"}], "functions": []}, "code2"),
-]
-
-# Generate documentation for original files
-results = asyncio.run(generator.generate_documentation_batch(files_data))
-print(results)
-
-update_files_data = [
-    (Path("file1.py"), {"classes": [{"name": "ClassA"}], "functions": []}, "code1", "updated code"), #Example file data with changes
-    (Path("file2.py"), {"classes": [{"name": "ClassB"}], "functions": []}, "code2", "updated code"),
-]
-update_results = asyncio.run(generator.generate_update_documentation_batch(update_files_data))
-print(update_results)
-```
-
-**Important Notes:**
-
-* The removal of template adaptation may lead to increased API calls and potentially higher costs if many files share similar structures.  The performance implications should be evaluated.
-* The changes simplify the code and reduce complexity, but they sacrifice the potential optimization of using a template for similar files.  The impact on performance should be monitored, especially for large sets of files.
-
-
----
-
-
-## Documentation Update (2025-01-15 13:46:01)
-
-### Changed Files:
-- docgen/cli.py
-- docgen/generators/ai_doc_generator.py
-- backend/run.py
-- backend/src/config/settings.py
-- backend/src/main.py
-- backend/src/models/usage.py
-- backend/src/models/user.py
-- backend/src/routes/auth.py
-- backend/src/routes/gemini.py
-- backend/src/routes/usage.py
-- backend/src/utils/prompts.py
-- backend/src/utils/security.py
-- backend/src/utils/supabase_client.py
-
-### Updates:
-
-#### docgen/cli.py
-### Documentation Update for `docgen/cli.py`
-
-1. **New Features and Modifications:**
-
-* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
-* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
-* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
-* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
-* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
-
-2. **Usage Examples:**
-
-* **Generating documentation for changed files only (incremental updates):**
- ```bash
- docgen update --updates-file updates.md
- ```
-* **Generating documentation for all files (full update):**
- ```bash
- docgen update --full
- ```
-
-3. **Important Notes:**
-
-* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
-
----
-
-#### docgen/generators/ai_doc_generator.py
-### Documentation Update for `docgen/cli.py`
-
-1. **New Features and Modifications:**
-
-* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
-* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
-* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
-* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
-* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
-
-2. **Usage Examples:**
-
-* **Generating documentation for changed files only (incremental updates):**
- ```bash
- docgen update --updates-file updates.md
- ```
-* **Generating documentation for all files (full update):**
- ```bash
- docgen update --full
- ```
-
-3. **Important Notes:**
-
-* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
-
----
-
-#### backend/run.py
-### Documentation Update for `docgen/cli.py`
-
-1. **New Features and Modifications:**
-
-* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
-* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
-* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
-* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
-* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
-
-2. **Usage Examples:**
-
-* **Generating documentation for changed files only (incremental updates):**
- ```bash
- docgen update --updates-file updates.md
- ```
-* **Generating documentation for all files (full update):**
- ```bash
- docgen update --full
- ```
-
-3. **Important Notes:**
-
-* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
-
----
-
-#### backend/src/config/settings.py
-### Documentation Update for `docgen/cli.py`
-
-1. **New Features and Modifications:**
-
-* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
-* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
-* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
-* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
-* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
-
-2. **Usage Examples:**
-
-* **Generating documentation for changed files only (incremental updates):**
- ```bash
- docgen update --updates-file updates.md
- ```
-* **Generating documentation for all files (full update):**
- ```bash
- docgen update --full
- ```
-
-3. **Important Notes:**
-
-* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
-
----
-
-#### backend/src/main.py
-### Documentation Update for `docgen/cli.py`
-
-1. **New Features and Modifications:**
-
-* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
-* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
-* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
-* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
-* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
-
-2. **Usage Examples:**
-
-* **Generating documentation for changed files only (incremental updates):**
- ```bash
- docgen update --updates-file updates.md
- ```
-* **Generating documentation for all files (full update):**
- ```bash
- docgen update --full
- ```
-
-3. **Important Notes:**
-
-* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
-
----
-
-#### backend/src/models/usage.py
-### Documentation Update for `docgen/cli.py`
-
-1. **New Features and Modifications:**
-
-* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
-* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
-* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
-* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
-* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
-
-2. **Usage Examples:**
-
-* **Generating documentation for changed files only (incremental updates):**
- ```bash
- docgen update --updates-file updates.md
- ```
-* **Generating documentation for all files (full update):**
- ```bash
- docgen update --full
- ```
-
-3. **Important Notes:**
-
-* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
-
----
-
-#### backend/src/models/user.py
-### Documentation Update for `docgen/cli.py`
-
-1. **New Features and Modifications:**
-
-* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
-* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
-* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
-* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
-* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
-
-2. **Usage Examples:**
-
-* **Generating documentation for changed files only (incremental updates):**
- ```bash
- docgen update --updates-file updates.md
- ```
-* **Generating documentation for all files (full update):**
- ```bash
- docgen update --full
- ```
-
-3. **Important Notes:**
-
-* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
-
----
-
-#### backend/src/routes/auth.py
-### Documentation Update for `docgen/cli.py`
-
-1. **New Features and Modifications:**
-
-* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
-* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
-* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
-* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
-* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
-
-2. **Usage Examples:**
-
-* **Generating documentation for changed files only (incremental updates):**
- ```bash
- docgen update --updates-file updates.md
- ```
-* **Generating documentation for all files (full update):**
- ```bash
- docgen update --full
- ```
-
-3. **Important Notes:**
-
-* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
-
----
-
-#### backend/src/routes/gemini.py
-### Documentation Update for `docgen/cli.py`
-
-1. **New Features and Modifications:**
-
-* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
-* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
-* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
-* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
-* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
-
-2. **Usage Examples:**
-
-* **Generating documentation for changed files only (incremental updates):**
- ```bash
- docgen update --updates-file updates.md
- ```
-* **Generating documentation for all files (full update):**
- ```bash
- docgen update --full
- ```
-
-3. **Important Notes:**
-
-* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
-
----
-
-#### backend/src/routes/usage.py
-### Documentation Update for `docgen/cli.py`
-
-1. **New Features and Modifications:**
-
-* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
-* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
-* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
-* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
-* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
-
-2. **Usage Examples:**
-
-* **Generating documentation for changed files only (incremental updates):**
- ```bash
- docgen update --updates-file updates.md
- ```
-* **Generating documentation for all files (full update):**
- ```bash
- docgen update --full
- ```
-
-3. **Important Notes:**
-
-* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
-
----
-
-#### backend/src/utils/prompts.py
-### Documentation Update for `docgen/cli.py`
-
-1. **New Features and Modifications:**
-
-* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
-* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
-* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
-* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
-* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
-
-2. **Usage Examples:**
-
-* **Generating documentation for changed files only (incremental updates):**
- ```bash
- docgen update --updates-file updates.md
- ```
-* **Generating documentation for all files (full update):**
- ```bash
- docgen update --full
- ```
-
-3. **Important Notes:**
-
-* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
-
----
-
-#### backend/src/utils/security.py
-### Documentation Update for `docgen/cli.py`
-
-1. **New Features and Modifications:**
-
-* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
-* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
-* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
-* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
-* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
-
-2. **Usage Examples:**
-
-* **Generating documentation for changed files only (incremental updates):**
- ```bash
- docgen update --updates-file updates.md
- ```
-* **Generating documentation for all files (full update):**
- ```bash
- docgen update --full
- ```
-
-3. **Important Notes:**
-
-* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
-
----
-
-#### backend/src/utils/supabase_client.py
-### Documentation Update for `docgen/cli.py`
-
-1. **New Features and Modifications:**
-
-* **Improved File Handling in `process_file`:**  The `process_file` function now includes robust error handling for file reading, including handling `UnicodeDecodeError` and checking for empty files.  Warnings are now issued for unreadable or empty files instead of causing crashes.  The function also adds a header to the generated documentation file including file name and timestamp.
-* **Large File Handling:** Added a check in `_generate_async` and `_update_docs_async` to skip files larger than 2MB, improving performance and preventing potential crashes with excessively large files.
-* **Batch Processing Enhancement:** The `generate` and `update` commands now process multiple files in batches asynchronously using `asyncio` and `AIDocGenerator.generate_documentation_batch`, significantly improving performance for larger codebases.
-* **`update` Command Enhancements:** The `update` command now supports generating a separate file (`--updates-file`) containing only the changes, in addition to updating the full documentation (`--full`). The existing documentation is now updated in place rather than being completely rewritten.
-* **Detailed Usage Tracking:** The `UsageTracker` now provides more detailed messages about usage limits and remaining quota.
-
-2. **Usage Examples:**
-
-* **Generating documentation for changed files only (incremental updates):**
- ```bash
- docgen update --updates-file updates.md
- ```
-* **Generating documentation for all files (full update):**
- ```bash
- docgen update --full
- ```
-
-3. **Important Notes:**
-
-* The changes significantly improve the robustness and performance of the `docgen` CLI, especially when dealing with large codebases or many files.  The added error handling prevents unexpected crashes.  The batch processing dramatically reduces the time taken for documentation generation. The `update` command's flexibility allows users more control over how changes are incorporated into documentation.
-
----
-
-
-## Documentation Update (2025-01-10 12:04:01)
-
-### Changed Files:
-- docgen/cli.py
-- docgen/generators/ai_doc_generator.py
-
-### Updates:
-
-#### docgen/cli.py
-## DocGen CLI Update:  Documentation Generation Improvements
-
-This update focuses on enhancing the core documentation generation process and improving the handling of large codebases.
-
-**Changes:**
-
-* **Improved File Handling:** The `generate` command now leverages the `SUPPORTED_EXTENSIONS` constant to determine which files to process,  eliminating the hardcoded list of extensions. This allows for easier extensibility in supporting new file types.
-* **Large File Handling:**  The `generate` command now skips files larger than 2MB to prevent excessive processing time and potential memory issues. A warning message is displayed for each skipped file.
-* **Asynchronous Batch Processing:**  The `generate` command now uses asynchronous operations with `asyncio` to improve the speed of processing multiple files concurrently.
-* **Removal of `analyze` command:** The `analyze` command has been removed.  The code analysis functionality remains integrated into the `generate` command.
-
-**Simple Usage Example (generate command):**
-
-To generate documentation for the current directory, including files with supported extensions:
-
-```bash
-docgen generate --current-dir
-```
-
-**Important Notes:**
-
-* The removal of the standalone `analyze` command means that code analysis is now performed implicitly during documentation generation.
-* The introduction of asynchronous processing may significantly reduce the time required to generate documentation for large codebases.  However, the actual speed improvement will depend on your system's resources and the complexity of the codebase.
-* The 2MB file size limit for skipping large files can be adjusted in the source code if needed.
-
----
-
-#### docgen/generators/ai_doc_generator.py
-## Documentation Update: `AIDocGenerator` Class
-
-The following changes were made to the `AIDocGenerator` class:
-
-### 1. Improved `_create_update_prompt` Function:
-
-* **Original Prompt:** The original prompt for generating update documentation was less specific, requesting features, functionality, examples, and notes without explicitly focusing on changes.
-
-* **Updated Prompt:** The updated `_create_update_prompt` function now provides a more precise prompt.  It explicitly instructs the AI to focus only on changes and their impact, specifying the format and desired level of detail.  The prompt now also clearly indicates what constitutes additions and deletions using the `+` and `-` symbols respectively in the diff.  The required sections are also more concise and relevant to change analysis.
-
-
-* **Impact:** This change results in more focused and relevant documentation updates, highlighting only the differences between code versions.  The AI is guided to provide more concise and technical updates focused solely on the impacted aspects.
-
-
-### 2.  `generate_update_documentation` Function:
-
-* **Change:** The method now includes error handling, ensuring that empty or null responses from the AI model are explicitly handled and raise an appropriate exception.
-
-* **Impact:** This enhancement improves the robustness of the `generate_update_documentation` function, preventing unexpected errors and providing more informative error messages.  This leads to more reliable update generation.
-
-### 3.  Minor Changes to Prompt Structure in `_create_update_prompt`
-
-The prompt structure within `_create_update_prompt` has been slightly adjusted for clarity and consistency. The original prompt included redundancies and was slightly less focused.  This refinement makes the instructions provided to the AI more precise.
-
----
-
-
-## Documentation Update (2025-01-09 14:04:52)
-
-### Changed Files:
-- docgen/analyzers/base_analyzer.py
-- docgen/analyzers/code_analyzer.py
-- docgen/utils/git_utils.py
-- docgen/utils/extension.py
-
-### Updates:
-
-#### docgen/analyzers/base_analyzer.py
-## Documentation Update: `docgen/analyzers/base_analyzer.py`
-
-**Changes:** The `get_language_extensions` abstract method has been removed from the `BaseAnalyzer` class.
-
-**Impact:**
-
-*   Language-specific analyzers no longer need to implement a method to declare supported file extensions.  The mechanism for determining which analyzer to use for a given file will need to be updated elsewhere in the codebase (this change is not reflected in the provided diff).
-
-**Key Functionality Removed:**
-
-*   The ability to directly query a `BaseAnalyzer` for its supported file extensions.
-
-
-**Important Notes:**
-
-* This change necessitates a modification to the overall analyzer selection logic. The updated logic must determine file type based on other information or methods.
-
----
-
-#### docgen/analyzers/code_analyzer.py
-## Code Analyzer Documentation Update
-
-The following changes were made to the `CodeAnalyzer` class:
-
-**1. Removed Feature:**
-
-* The `get_language_extensions()` static method has been removed. This method previously returned a list of common programming language file extensions.
-
-**2. Impact:**
-
-* The `CodeAnalyzer` class no longer provides a built-in list of supported file extensions.  If extension-based filtering or language detection is required, this logic must now be implemented elsewhere in the application.
-
-**3. Key Functionality Change:**
-
-* The core `analyze_file()` method remains unchanged.  It still analyzes a file, reading its contents and returning a dictionary with file metadata and source code.
-
-**4. Important Notes:**
-
-*  Any code relying on the `get_language_extensions()` method will need to be updated to provide its own mechanism for identifying file types or filtering by extensions.  
-
----
-
-#### docgen/utils/git_utils.py
-## Documentation Update: `git_utils.py` - `get_changed_files()` method
-
-**1. New or Modified Features:**
-
-* The `get_changed_files()` method has been completely rewritten for improved efficiency and error handling.
-* It now uses `git diff-index` to retrieve all changes (staged and unstaged) in a single operation, rather than iterating through staged and unstaged changes separately.  This significantly improves performance, especially in large repositories.
-* The method directly accesses the patch from the diff object, reducing redundant file reads and improving speed.
-* Enhanced handling of UnicodeDecodeError during file reading.
-* Explicit checks for file existence before attempting to read content.
-* Improved error handling with more informative console messages.
-* More robust handling of untracked files, including better filtering of hidden and unsupported files.
-* Added support for detecting new files.
-
-**2. Key Functionality:**
-
-* The core functionality remains the same: to identify files changed since the last documentation update and return a dictionary containing file paths, change types ('modified' or 'new'), patch information, and full file content.  However, the implementation is significantly improved for efficiency and robustness.
-
-**3. Simple Usage Example:**
-
-The usage remains unchanged:
-
-```python
-analyzer = GitAnalyzer()
-changed_files = analyzer.get_changed_files()
-```
-
-**4. Important Notes:**
-
-* The previous method's approach of handling staged and unstaged changes separately has been replaced by a more efficient single-pass approach using `git diff-index`.
-* The structure of the returned dictionary remains consistent, though the method of obtaining the change information is significantly different.
-* The error handling is now more comprehensive, providing more detailed information in case of errors.
-* The method now explicitly handles untracked files and better filters for hidden/unsupported files.
-
-
----
-
-#### docgen/utils/extension.py
-## Documentation Update: `SUPPORTED_EXTENSIONS`
-
-**Changes:** No actual changes were made to the `SUPPORTED_EXTENSIONS` list itself. The provided diff shows the list's *content*, not modifications to it.  Therefore, no functional changes have occurred.  The diff likely represents a refactoring or a simple copy/paste of the existing list into the `docgen/utils/extension.py` file.
-
-**Impact:** No impact on functionality. The list of supported file extensions remains unchanged.
-
----
-
-
-
-## Documentation Update (2025-01-09 13:41:39)
-
-### Changed Files:
-- docgen/cli.py
-- docgen/generators/ai_doc_generator.py
-- docgen/utils/git_utils.py
-
-### Updates:
-
-#### docgen/cli.py
-# DocGen CLI Update: Incremental Documentation Updates
-
-This update introduces the ability to generate incremental documentation updates using Git version control.
-
-
-## New Features:
-
-* **`update` command:**  This command now allows for generating updates to existing documentation, either as a full re-generation or incremental updates stored in a separate file.
-* **Incremental Updates:** The `update` command (and its alias `u`) can now generate documentation updates showing only changes since the last documentation generation, leveraging Git history.  These updates can be appended to an existing documentation file or saved into a separate file specified by `--updates-file`.
-* **Full Update Option:**  A `--full` flag has been added to the `update` command to force a full regeneration of the documentation for all changed files.
-* **`update_existing_documentation` function:** Added to handle full updates within the existing documentation file, adding a "Recent Updates" section if it doesn't exist.
-* **`add_incremental_update` function:**  Handles the creation and appending of incremental updates to either an existing documentation file or a newly created one (if `--updates-file` is specified).
-
-
-## Key Functionality Changes:
-
-* The `update` command uses `GitAnalyzer` to identify changed files and their content differences.
-* The `AIDocGenerator` now includes an `async generate_update_documentation` method to efficiently generate documentation for code changes.
-* Large files (>2MB) are skipped during both generation and update.
-* Improved error handling and informative console output during update process.
-
-
-## Usage Example:
-
-To generate incremental updates to an existing `codebase_documentation.md` file:
-
-```bash
-docgen update
-```
-
-To generate incremental updates and store them in a separate file named `updates.md`:
-
-```bash
-docgen update --updates-file updates.md 
-```
-
-To perform a full update of the documentation:
-
-```bash
-docgen update --full
-```
-
-
-## Important Notes:
-
-* This update requires Git to be installed and configured within the project directory.  The `GitAnalyzer` relies on Git's functionality to detect changes.
-*  The `update` command assumes the existence of a file named "codebase_documentation.md" unless the `--updates-file` option is used. If this file doesn't exist and a full update is not requested,  the command will generate a new file.
-* Error messages during analysis are now presented as warnings, allowing the process to continue.
-*  The `update` command now ensures the use of absolute file paths.
-
----
-
-#### docgen/generators/ai_doc_generator.py
-## Documentation Update: AIDocGenerator
-
-This update introduces a new method for generating documentation updates based on code changes.
-
-
-### New Method: `generate_update_documentation`
-
-This asynchronous method takes the original code and the changes as input and returns updated documentation focusing only on the changes and their impact.
-
-**Signature:**
-
-```python
-async def generate_update_documentation(self, code: str, changes: str) -> str:
-```
-
-**Parameters:**
-
-* `code` (str): The original code snippet.
-* `changes` (str): A diff showing the code changes (+ for additions, - for deletions).
-
-**Returns:**
-
-* `str`: Updated documentation in markdown format, highlighting only the changes and their impact.  Returns "No significant code changes detected." if no changes are provided.
-
-**Functionality:**
-
-The method constructs a specific prompt for the AI model, tailored to generating focused documentation updates. The prompt includes the original code, the changes, and instructions to focus only on the changes and their impact. The model's response is then returned.  Error handling is implemented to manage potential issues during the AI call.  Rate limiting and retry mechanisms are the same as other AI calls.
-
-
-**Impact:**
-
-This addition enhances the functionality of the `AIDocGenerator` class by enabling the generation of more targeted and efficient documentation updates, reducing the need to regenerate complete documentation for minor code modifications.  The prompt is explicitly designed to guide the AI towards concise and focused updates.
-
----
-
-#### docgen/utils/git_utils.py
-## Documentation Update for `git_utils.py`
-
-**Changes:**
-
-* **Improved `get_changed_files` function:** This function now more accurately identifies changed files by differentiating between unstaged, staged, and untracked files.  The unified diff generation is enhanced to better represent file changes.  Error handling is improved to include exception type in error messages.
-
-* **No functional changes to `update_last_documented_state` function:** This function remains unchanged in its logic.
-
-**Impact:**
-
-* More comprehensive identification of file changes, including better handling of untracked files.
-* Improved accuracy of the generated diffs.
-* Enhanced error reporting in `get_changed_files` providing greater diagnostic information.
-
-
-**No changes to key functionality or usage examples needed.**
-
-**Important Notes:**
-
-* The improved error handling in `get_changed_files` provides more detailed error information for debugging purposes.
-* The `get_changed_files` function now provides a more comprehensive representation of changes in a Git repository, including detailed diffs for modified files and a clear representation of new files.
-
----
-
 # Codebase Documentation
 
-Generated on: 2025-01-08 05:09:07
+Generated on: 2025-03-09 12:18:07
 
 
 ## Table of Contents
 
-- [docgen/__init__.py](#docgen-__init__.py)
+- [docgen/__init__.py]
 
-- [docgen/analyzers/__init__.py](#docgen-analyzers-__init__.py)
+- [docgen/analyzers/__init__.py]
 
-- [docgen/analyzers/base_analyzer.py](#docgen-analyzers-base_analyzer.py)
+- [docgen/analyzers/base_analyzer.py]
 
-- [docgen/analyzers/code_analyzer.py](#docgen-analyzers-code_analyzer.py)
+- [docgen/analyzers/code_analyzer.py]
 
-- [docgen/cli.py](#docgen-cli.py)
+- [docgen/auth/__init__.py]
 
-- [docgen/config/__init__.py](#docgen-config-__init__.py)
+- [docgen/auth/api_key_manager.py]
 
-- [docgen/config/config_handler.py](#docgen-config-config_handler.py)
+- [docgen/auth/usage_tracker.py]
 
-- [docgen/config/language_config.py](#docgen-config-language_config.py)
+- [docgen/cli.py]
 
-- [docgen/generators/__init__.py](#docgen-generators-__init__.py)
+- [docgen/config/__init__.py]
 
-- [docgen/generators/ai_doc_generator.py](#docgen-generators-ai_doc_generator.py)
+- [docgen/config/config_handler.py]
 
-- [docgen/generators/docstring_generator.py](#docgen-generators-docstring_generator.py)
+- [docgen/config/language_config.py]
 
-- [docgen/generators/markdown_generator.py](#docgen-generators-markdown_generator.py)
+- [docgen/config/urls.py]
 
-- [docgen/utils/__init__.py](#docgen-utils-__init__.py)
+- [docgen/generators/__init__.py]
 
-- [docgen/utils/config.py](#docgen-utils-config.py)
+- [docgen/generators/ai_doc_generator.py]
 
-- [docgen/utils/git_utils.py](#docgen-utils-git_utils.py)
+- [docgen/generators/docstring_generator.py]
 
-- [setup.py](#setup.py)
+- [docgen/generators/markdown_generator.py]
 
-- [tests/__init__.py](#tests-__init__.py)
+- [docgen/utils/__init__.py]
 
-- [tests/test_cli.py](#tests-test_cli.py)
+- [docgen/utils/_machine_utils.cpp]
 
-- [tests/test_config.py](#tests-test_config.py)
+- [docgen/utils/_machine_utils.pyx]
 
-- [tests/test_generator.py](#tests-test_generator.py)
+- [docgen/utils/_machine_utils_py.py]
 
-- [tests/test_git_utils.py](#tests-test_git_utils.py)
+- [docgen/utils/ai_client.py]
+
+- [docgen/utils/config.py]
+
+- [docgen/utils/extension.py]
+
+- [docgen/utils/git_utils.py]
+
+- [docgen/utils/machine_utils.py]
+
+- [setup.py]
+
+- [test_machine_id.py]
+
+- [tests/__init__.py]
+
+- [tests/test_cli.py]
+
+- [tests/test_config.py]
+
+- [tests/test_generator.py]
+
+- [tests/test_git_utils.py]
 
 
 <a id='docgen-__init__.py'></a>
 
 ## docgen/__init__.py
 
-# Technical Documentation: Docstring and Markdown Generators
+3
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+1. **Brief purpose/overview:** This file (`extension.py`) defines a list named `SUPPORTED_EXTENSIONS`, containing file extensions that the documentation generator will process.
 
-## Key Functionality:
+2. **Key functionality:**  The file simply provides a list of file extensions.  No explicit functionality is defined within this file itself.
 
-**`DocstringGenerator`:**
+3. **File interactions:**
+    * **Imports:** None.
+    * **Imported by:** `cli.py`, `git_utils.py`.  `SUPPORTED_EXTENSIONS` is imported and used by these modules to filter files based on their extensions during analysis.
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
+4. **Usage example:** The list is used implicitly within `git_utils.py` inside the `get_changed_files` method to determine which files should be included in the analysis.
 
-**`MarkdownGenerator`:**
-
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
-
-## Usage Example:
-
-```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
-
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
-
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
-```
-
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
-
-
+5. **Important notes:**  Maintaining this list is crucial for controlling which file types are processed by the documentation generator.  Adding or removing extensions here directly impacts the scope of the documentation generated.  The list is extensive and covers a wide variety of programming languages and file types.
 
 ---
 
@@ -1463,51 +95,29 @@ print(markdown)
 
 ## docgen/analyzers/__init__.py
 
-# Technical Documentation: Docstring and Markdown Generators
+1
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+1. **Purpose/Overview:** This file (`test_config.py`) contains unit tests for the `ConfigHandler` class, ensuring the correct functionality of configuration loading, saving, and default values.  It uses the `pytest` framework for testing.
 
-## Key Functionality:
+2. **Key Functionality:**
 
-**`DocstringGenerator`:**
-
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
-
-**`MarkdownGenerator`:**
-
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
-
-## Usage Example:
-
-```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
-
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
-
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
-```
-
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
+*   `temp_config` fixture: Creates a temporary directory and a `ConfigHandler` instance, using it to test configuration handling without side effects.  The temporary directory is automatically cleaned up.
+*   `test_config_defaults`: Verifies that the default configuration values are correctly loaded when no configuration file exists.
+*   `test_config_set_get`: Tests the `set` and `get` methods of the `ConfigHandler` class, ensuring that values are correctly stored and retrieved.
+*   `test_config_save_load`: Checks the `save` and `load` methods, verifying that the configuration is saved to and loaded from a JSON file correctly.
+*   `test_config_invalid_json`: Tests the robustness of the `load` method by attempting to load an invalid JSON file; it verifies that the system gracefully falls back to default values.
+*   `test_config_missing_file`:  Tests the scenario where the configuration file is missing; it confirms the system correctly uses default values.
+*   `test_config_invalid_values` (commented out): This test (commented out in the provided code) would likely verify that input validation within the `set` method correctly raises exceptions for invalid values.
 
 
+3. **File Interactions:**
+
+*   **Imports:** This file imports `ConfigHandler` from `config_handler.py` (File 2), `pytest` for testing, `tempfile` for temporary directory creation, and `pathlib` for path manipulation.
+*   **Imported By:** This file is not directly imported by any other files in the provided codebase; it's a standalone test file.
+
+4. **Usage Example:**  The file uses `pytest` to run the tests.  No explicit usage example is needed as it's a test file.  The tests themselves demonstrate the usage of `ConfigHandler`.
+
+5. **Important Notes:** The tests thoroughly cover various scenarios, including error handling and default value behavior, ensuring the reliability of the `ConfigHandler` class.  The commented-out test suggests further validation could be added.
 
 ---
 
@@ -1516,51 +126,42 @@ print(markdown)
 
 ## docgen/analyzers/base_analyzer.py
 
-# Technical Documentation: Docstring and Markdown Generators
+2
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+1. **Purpose/Overview:** This file (`config_handler.py`) defines the `ConfigHandler` class, responsible for managing application configuration. It handles loading, saving, and validating configuration settings from a JSON file.
 
-## Key Functionality:
+2. **Key Functionality:**
 
-**`DocstringGenerator`:**
+*   `DEFAULT_CONFIG`: Defines a dictionary containing default configuration values.
+*   `VALID_TEMPLATE_STYLES`, `VALID_OUTPUT_FORMATS`: Lists of valid values for specific configuration options.
+*   `ConfigHandler` class:
+    *   `__init__`: Initializes the `ConfigHandler`, setting default values and defining the path to the configuration file.
+    *   `load`: Loads the configuration from the JSON file, handling potential `json.JSONDecodeError` exceptions.
+    *   `get`: Retrieves a configuration value, providing a default value if the key is not found.
+    *   `set`: Sets a configuration value, performing validation to ensure the value is valid for the given key.
+    *   `save`: Saves the current configuration to the JSON file, creating the necessary directories if they don't exist.
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
+3. **File Interactions:**
 
-**`MarkdownGenerator`:**
+*   **Imports:** This file uses `pathlib` for path manipulation, `json` for JSON handling, and `typing` for type hinting.
+*   **Imported By:** This file is imported by `test_config.py` (File 1), `cli.py` (not provided), and `__init__.py` (not provided).  `cli.py` likely uses `ConfigHandler` to access and potentially modify application settings from the command line. `__init__.py` probably uses it to set up the configuration for the main application.
 
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
-
-## Usage Example:
+4. **Usage Example:**
 
 ```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
+from docgen.config.config_handler import ConfigHandler
 
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
+config = ConfigHandler()
+config.set("template_style", "numpy")
+config.set("output_format", "html")
+config.save()
 
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
+print(config.get("template_style"))  # Output: numpy
+print(config.get("recursive", True)) # Output: False (default)
+
 ```
 
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
-
-
+5. **Important Notes:** The `ConfigHandler` class uses a combination of default values and validation to ensure the robustness and correctness of the configuration settings.  The use of type hints enhances code readability and maintainability.  Error handling during file I/O and JSON parsing is implemented to prevent unexpected crashes.
 
 ---
 
@@ -1569,51 +170,155 @@ print(markdown)
 
 ## docgen/analyzers/code_analyzer.py
 
-# Technical Documentation: Docstring and Markdown Generators
+1
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+1. **Brief purpose/overview:** This file (`URLConfig`) defines a configuration class containing all the base URLs for interacting with the DocGen AI service.  It centralizes endpoint definitions for usage tracking, authentication, and code generation.
 
-## Key Functionality:
+2. **Key functionality:**
+    * Defines a list `SERVER_URLS` holding base URLs for multiple AI servers.  This allows for redundancy and failover.
+    * Constructs URLs for usage tracking (`USAGE_BASE_URL`, `USAGE_CHECK_URL`, `USAGE_TRACK_URL`) and authentication (`AUTH_BASE_URL`, `AUTH_VERIFY_URL`).
+    * Provides URLs for code generation (`GENERATE_URL`, `GENERATE_BATCH_URL`).  These are relative URLs, implying they are appended to one of the base URLs in `SERVER_URLS` during runtime.
 
-**`DocstringGenerator`:**
+3. **Interaction with other files:**
+    * **Imported by:** `cli.py`, `api_key_manager.py`, `usage_tracker.py`, `ai_client.py`.  These files use the URL configurations defined in this file to interact with the DocGen AI service.  For example, `ai_client.py` likely uses `GENERATE_URL` and `GENERATE_BATCH_URL` to send code generation requests. `usage_tracker.py` uses the `USAGE_*` URLs to report usage metrics.
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
-
-**`MarkdownGenerator`:**
-
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
-
-## Usage Example:
+4. **Usage example (Illustrative):**
 
 ```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
+# Hypothetical example in ai_client.py
+from URLConfig import URLConfig
 
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
-
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
+class AIClient:
+    def generate_code(self, code):
+        url = URLConfig.SERVER_URLS[0] + URLConfig.GENERATE_URL  # Example using first server
+        # ... send request to url ...
 ```
 
-## Important Notes:
+5. **Important notes:** The choice of which server URL to use (from `SERVER_URLS`) is not explicitly defined in this file and likely handled by other modules based on load balancing, availability, or other criteria.  The use of f-strings makes the code concise but requires careful management to avoid errors if `SERVER_URLS` is ever empty or improperly configured.
 
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
+---
 
 
+<a id='docgen-auth-__init__.py'></a>
+
+## docgen/auth/__init__.py
+
+1
+
+1. **Brief purpose/overview:** This file (`ai_doc_generator.py`) contains the core logic for generating documentation using an AI model. It manages caching, rate limiting, and parallel processing to efficiently generate documentation for code files.  It acts as the central hub for documentation generation within the DocGen system.
+
+2. **Key functionality:**
+
+   - **Initialization:** Sets up API key management (`APIKeyManager`), AI client interaction (`AIClient`), cache directory, and rate-limiting parameters. Initializes a memory cache.
+   - **Documentation Generation (`_generate_doc`):** Sends code to the AI client for documentation generation, includes robust error handling and retry mechanisms with exponential backoff.  Rate-limited using the `ratelimit` library.
+   - **File Grouping (`_group_similar_files`):** Groups files with similar structures (based on class, function, and import counts) to reduce redundant API calls.
+   - **Batch Processing (`_process_file_group`, `generate_documentation_batch`):** Processes groups of files concurrently using multiprocessing to speed up generation. The `generate_documentation_batch` method uses asynchronous operations for improved concurrency.
+   - **Caching (`_create_cache_key`, `_get_cached_doc`, `_save_to_cache`, `_fast_cache_key`):** Implements a caching mechanism using both in-memory and file-based storage to avoid redundant API calls.  Offers both a slower, more accurate caching method and a faster, less precise one.
+   - **Template Adaptation (`_adapt_template`):** Attempts to adapt a template documentation for similar files, generating a new one if adaptation fails.
+   - **Update Documentation Generation (`generate_update_documentation`, `generate_update_documentation_batch`, `_process_update_group`, `_generate_update_doc`):** Provides functionality to generate documentation specifically for code updates, taking into account the changes made. This includes asynchronous batch processing and caching for updates.
+
+
+3. **File interactions:**
+
+   - **Imports:** `api_key_manager.py` (for API key management), `ai_client.py` (for interacting with the AI service).
+   - **Imported by:** `cli.py` (the main command-line interface).  The `cli.py` file uses this class to generate documentation based on user input.
+
+4. **Usage example:** (Illustrative, requires context from other files)
+
+   ```python
+   generator = AIDocGenerator()
+   file_path = Path("./my_file.py")
+   code = file_path.read_text()
+   analyzer = CodeAnalyzer(file_path) # Assuming CodeAnalyzer exists and is defined elsewhere.
+   analysis = analyzer.analyze_file()
+   documentation = asyncio.run(generator.generate_documentation_batch([(file_path, analysis, code)]))
+   print(documentation) 
+   ```
+
+5. **Important notes:** The class utilizes both synchronous and asynchronous methods for optimal performance.  The caching strategy significantly impacts performance and reduces API calls.  Error handling and retry mechanisms are crucial for reliability.
+
+---
+
+
+<a id='docgen-auth-api_key_manager.py'></a>
+
+## docgen/auth/api_key_manager.py
+
+3
+
+1. **Brief purpose/overview:** This file defines the `UsageTracker` class, responsible for tracking API usage. It checks remaining usage limits and logs new requests.
+
+2. **Key functionality:**
+    *   `__init__(self)`: Initializes the tracker with the machine ID and an instance of `APIKeyManager`.
+    *   `can_make_request(self) -> Tuple[bool, str]`: Checks the remaining API request quota by making a request to a usage tracking API. Returns a tuple indicating whether a request can be made (boolean) and a message with usage information.  Uses `rich.console` for formatted output of warnings.
+    *   `track_request(self) -> None`: Logs a new API request.
+
+3. **Interaction with other files:**
+    *   **Imports:** `api_key_manager.py` (uses `APIKeyManager` to get the API key), `urls.py` (for API URLs), `machine_utils` (for machine ID).
+    *   **Imported by:** `cli.py`, `__init__.py` (likely used for tracking usage in the command-line interface or other parts of the application).
+
+4. **Usage example:** (Illustrative)
+
+```python
+# Hypothetical cli.py snippet
+from docgen.usage_tracker import UsageTracker
+
+usage_tracker = UsageTracker()
+can_make_request, message = usage_tracker.can_make_request()
+if can_make_request:
+    # Make API request
+    usage_tracker.track_request()
+else:
+    print(f"Cannot make request: {message}")
+```
+
+5. **Important notes:** The error handling in both `can_make_request` and `track_request` uses broad `Exception` handling and prints warnings using `rich.console`. While this is acceptable for a simple warning, more detailed logging and specific exception handling would improve the robustness and debuggability of the code.  The `track_request` method lacks error checking of the response content.  It should check the response for error codes and handle them appropriately.
+
+---
+
+
+<a id='docgen-auth-usage_tracker.py'></a>
+
+## docgen/auth/usage_tracker.py
+
+2
+
+1. **Brief purpose/overview:** This file (`ai_client.py`) provides a client for interacting with the AI documentation generation service. It handles communication with the server, manages rate limiting, and implements batch processing for improved efficiency.
+
+2. **Key functionality:**
+
+   - **Initialization:** Sets up connection pooling using `requests` library, initializes an asynchronous session (`aiohttp`) for concurrent requests, and defines rate-limiting parameters.  Also initializes a cache directory.
+   - **Connection Pooling (`_create_session`):** Creates a `requests` session with connection pooling and retry mechanisms for improved performance and resilience.
+   - **Rate Limiting (`_wait_for_rate_limit`):** Implements rate limiting to avoid exceeding the AI service's limits.
+   - **Asynchronous Request Handling (`_make_request`):** Makes asynchronous requests to the AI service using `aiohttp`.  Handles different response statuses, including retries.
+   - **Batch Request Handling (`_create_batches`, `_make_batch_request`, `generate_text_batch`):** Divides large requests into smaller batches to optimize performance and handle potential token limits. The `generate_text_batch` method uses caching to avoid unnecessary requests.
+   - **Caching (`_get_cached_doc`, `_save_to_cache`, `_fast_cache_key`):**  Provides caching functionality to store and retrieve documentation, improving efficiency. The cache is checked before making API calls.
+   - **Token Estimation (`_estimate_tokens`):** Provides a rough estimate of the number of tokens in a code snippet.
+   - **Async Session Management (`_ensure_async_session`, `close`):** Ensures an asynchronous session is created and properly closed.
+   - **Update Documentation Batch Generation (`generate_update_documentation_batch`):** Handles batch processing for updating documentation, utilizing caching.
+   - **API Usage Tracking (`_track_usage`):** Tracks API usage for monitoring and billing purposes.
+
+
+3. **File interactions:**
+
+   - **Imports:** `api_key_manager.py` (for API key management), `urls.py` (for server URLs).
+   - **Imported by:** `ai_doc_generator.py` (uses this client to interact with the AI service). The `ai_doc_generator` uses this class to send code to the AI and receive documentation.
+
+
+4. **Usage example:** (Illustrative, requires setting up an AI server and API key)
+
+   ```python
+   async def main():
+       client = AIClient()
+       code = "print('Hello, world!')"
+       documentation = await client.generate_text(code=code)
+       print(documentation)
+       await client.close()
+
+   asyncio.run(main())
+   ```
+
+5. **Important notes:** The client uses asynchronous operations for concurrency.  The rate-limiting and retry mechanisms are essential for robust operation.  Efficient batching and caching are crucial for handling large codebases. The code includes error handling for various scenarios, including network issues and API errors.
 
 ---
 
@@ -1622,51 +327,18 @@ print(markdown)
 
 ## docgen/cli.py
 
-# Technical Documentation: Docstring and Markdown Generators
+1
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+* **Purpose/Overview:** This file, containing only a docstring, serves as a placeholder or initial stub for a Python package intended for testing documentation generation tools.  It doesn't contain any executable code beyond the docstring itself.  Its primary role is to provide context for other files within the testing package.
 
-## Key Functionality:
+* **Key Functionality:**
+    * Defines a docstring indicating the package's purpose ("Test package for docgen").  This docstring is likely intended to be parsed and included in the generated documentation.  No actual functionality is implemented in this file.
 
-**`DocstringGenerator`:**
+* **Interaction with other files:**  This file currently has no direct interaction with other files, as it lacks any imports or executable code. However, it's expected that other files within the "docgen" test package will import it or utilize it as a base module for testing purposes.  The absence of code suggests that further development is needed to populate this package with meaningful test cases.
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
+* **Usage Example:**  No usage example is possible at this stage, as the file doesn't contain any functional code.  A future usage example would likely involve creating and running tests within the larger "docgen" package.
 
-**`MarkdownGenerator`:**
-
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
-
-## Usage Example:
-
-```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
-
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
-
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
-```
-
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
-
-
+* **Important Notes:** The current state of this file suggests it's an incomplete or preliminary component of a larger test suite.  Further development is necessary to add actual test cases and modules to make this package functional.  The file serves primarily as a container for the package's metadata at this point.
 
 ---
 
@@ -1675,51 +347,30 @@ print(markdown)
 
 ## docgen/config/__init__.py
 
-# Technical Documentation: Docstring and Markdown Generators
+3
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+1. **Brief purpose/overview:** This file (`base_analyzer.py`) defines an abstract base class `BaseAnalyzer` for code analyzers.  It provides a common interface and basic functionality for different language-specific analyzers.
 
-## Key Functionality:
+2. **Key functionality:**
+    * `__init__(self, path: Path)`: Initializes the analyzer with a file path, performing basic validation to ensure the path exists and points to a file.
+    * `analyze_file(self) -> Dict[str, Any]`: An abstract method that must be implemented by subclasses.  This method is responsible for analyzing the source code file and returning a dictionary containing the extracted structure.
 
-**`DocstringGenerator`:**
+3. **Interaction with other files:**
+    * **Imported by:** `__init__.py` (likely the package initialization file), `code_analyzer.py` (likely a concrete implementation of a code analyzer).  This file serves as a foundation for creating specific code analyzers (e.g., for Python, Java, etc.).  `code_analyzer.py` would inherit from `BaseAnalyzer` and implement the `analyze_file` method.
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
-
-**`MarkdownGenerator`:**
-
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
-
-## Usage Example:
+4. **Usage example (Illustrative):**
 
 ```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
+# Hypothetical example in code_analyzer.py
+from base_analyzer import BaseAnalyzer
 
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
-
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
+class PythonAnalyzer(BaseAnalyzer):
+    def analyze_file(self) -> Dict[str, Any]:
+        # ...Implementation to parse Python code and return analysis results...
+        return {"functions": ["func1", "func2"], "classes": ["ClassA"]}
 ```
 
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
-
-
+5. **Important notes:** The `BaseAnalyzer` class enforces a consistent structure for all code analyzers, promoting maintainability and extensibility.  Error handling in the constructor ensures robustness against invalid input paths.  The use of abstract methods ensures that concrete analyzers provide the necessary functionality.
 
 ---
 
@@ -1728,51 +379,38 @@ print(markdown)
 
 ## docgen/config/config_handler.py
 
-# Technical Documentation: Docstring and Markdown Generators
+2
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+1. **Brief purpose/overview:** This file defines the `APIKeyManager` class, responsible for managing the API key used to interact with a remote service (likely for usage tracking or AI model access). It handles key storage, retrieval, and validation.
 
-## Key Functionality:
+2. **Key functionality:**
+    *   `__init__(self)`: Initializes the manager, creating a configuration directory and file if they don't exist.  It also gets the machine ID using `get_machine_id()` from `machine_utils`.
+    *   `_save_config(self, config: dict) -> None`: Saves the API key configuration to a JSON file.
+    *   `_load_config(self) -> dict`: Loads the API key configuration from a JSON file. Handles potential errors during file reading.
+    *   `get_api_key(self) -> Optional[str]`: Retrieves the stored API key.
+    *   `set_api_key(self, api_key: Optional[str]) -> None`: Stores or updates the API key.
+    *   `validate_api_key(self, api_key: str) -> Tuple[bool, Optional[str]]`: Sends a request to a server to validate the API key. Returns a tuple indicating success (boolean) and the associated plan (string, if successful).  It also updates the stored API key based on validation result.
 
-**`DocstringGenerator`:**
+3. **Interaction with other files:**
+    *   **Imports:** `urls.py` (presumably contains URLs for API endpoints), `machine_utils` (provides a `get_machine_id` function).
+    *   **Imported by:** `cli.py`, `__init__.py`, `usage_tracker.py`, `ai_client.py`, `ai_doc_generator.py` (These files all use the API key manager for various tasks).
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
-
-**`MarkdownGenerator`:**
-
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
-
-## Usage Example:
+4. **Usage example:** (Illustrative)
 
 ```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
+# Hypothetical ai_client.py snippet
+from docgen.api_key_manager import APIKeyManager
 
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
-
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
+api_key_manager = APIKeyManager()
+api_key = api_key_manager.get_api_key()
+if api_key:
+    # Use the API key to make requests
+    pass
+else:
+    print("No API key found.")
 ```
 
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
-
-
+5. **Important notes:** The `validate_api_key` method uses a `try-except` block to catch general exceptions during the API request. More specific exception handling might be beneficial.  The error handling in `_load_config` is too broad; it should catch specific exceptions for better diagnostics.
 
 ---
 
@@ -1781,51 +419,59 @@ print(markdown)
 
 ## docgen/config/language_config.py
 
-# Technical Documentation: Docstring and Markdown Generators
+2
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+1. **Brief purpose/overview:** This file (`test_cli.py`) contains unit tests for the command-line interface (CLI) of the DocGen application, using the `typer` testing framework.  It verifies the basic functionality of the CLI commands.
 
-## Key Functionality:
+2. **Key functionality:**
+    * `test_cli_version()`: Tests the `version` command, checking for the correct exit code and output string.
+    * `test_cli_analyze_nonexistent()`: Tests the `analyze` command with a non-existent file path, verifying the error handling.
+    * `test_cli_analyze_valid(tmp_path)`: Tests the `analyze` command with a valid file path, using a temporary file created by `pytest`, checking for successful analysis.
 
-**`DocstringGenerator`:**
+3. **Interaction with other files:**
+    * **Imports:** `cli.py` (contains the `app` object representing the CLI application).  The tests directly invoke the CLI application defined in `cli.py` to check its behavior.
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
+4. **Usage example:** The file itself is a usage example. It demonstrates how to use the `typer.testing.CliRunner` to test the CLI defined in `docgen.cli`.
 
-**`MarkdownGenerator`:**
+5. **Important notes:** The tests are comprehensive enough to cover basic functionality but might need to be extended to include edge cases and more complex scenarios as the CLI evolves.
 
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
+---
 
-## Usage Example:
+
+<a id='docgen-config-urls.py'></a>
+
+## docgen/config/urls.py
+
+1
+
+1. **Brief purpose/overview:** This file defines the `CodeAnalyzer` class, responsible for analyzing source code files. It reads the file content, extracts basic file information (path, name, extension, size), and returns this data as a dictionary.  This is a core component for pre-processing code before AI-based documentation generation.
+
+2. **Key functionality:**
+    *   `__init__(self, path: Path)`: Initializes the analyzer with a file path, performing input validation to ensure the path exists and points to a file.
+    *   `analyze_file(self) -> Dict[str, Any]`: Reads the file content, and returns a dictionary containing the file path, name, extension, source code, and size.  Handles potential `FileNotFoundError` and other exceptions during file processing.
+
+3. **Interaction with other files:**
+    *   **Imports:** `base_analyzer.py` (presumably defines a base class `BaseAnalyzer` that `CodeAnalyzer` inherits from).
+    *   **Imported by:** `cli.py` (likely uses this class for command-line file analysis), `__init__.py` (likely for module initialization and making the class available).
+
+4. **Usage example:** (Illustrative, assuming `cli.py` and `base_analyzer.py` structure)
 
 ```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
+# Hypothetical cli.py snippet
+from docgen.analyzer import CodeAnalyzer
 
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
+def analyze_code(filepath):
+    analyzer = CodeAnalyzer(filepath)
+    analysis_result = analyzer.analyze_file()
+    print(analysis_result)
 
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
+# Hypothetical base_analyzer.py snippet
+class BaseAnalyzer:
+    pass # Placeholder for potential base class methods
+
 ```
 
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
-
-
+5. **Important notes:** The `analyze_file` method throws a generic `Exception` on failure.  More specific exception handling might improve error reporting and debugging.  Error handling could be improved by catching specific exceptions (e.g., `IOError`, `UnicodeDecodeError`) and providing more informative error messages.
 
 ---
 
@@ -1834,51 +480,42 @@ print(markdown)
 
 ## docgen/generators/__init__.py
 
-# Technical Documentation: Docstring and Markdown Generators
+3: usage_tracker.py (Hypothetical Implementation)
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+**1. Brief purpose/overview in context of the overall system:**
 
-## Key Functionality:
+This file contains the `UsageTracker` class, responsible for tracking API usage. This could involve logging API calls, calculating usage limits, and generating usage reports.
 
-**`DocstringGenerator`:**
+**2. All key functionality with brief explanations (bullet points):**
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
+* **log_usage(api_key, request_data):** Logs API call details, including the API key used and request parameters.
+* **get_usage(api_key):** Retrieves usage statistics for a given API key.
+* **check_usage_limit(api_key):** Checks if the usage limit for a given API key has been exceeded.
 
-**`MarkdownGenerator`:**
 
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
+**3. How this file interacts with imported files and files that import it:**
 
-## Usage Example:
+* **Imported by:** File 1 (namespace package) for export.
+* **Imports:** Might import logging libraries, database interaction libraries, or other modules for data storage and analysis.
+* **Interaction with other files:** Works in conjunction with `api_key_manager.py` (implicitly) because it uses API keys to identify users and track their usage.
+
+
+**4. Usage example showing how it works with related files (if applicable):**
+
+(Illustrative; exact implementation depends on the actual code in `usage_tracker.py`)
 
 ```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
+from .usage_tracker import UsageTracker
 
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
-
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
+usage_tracker = UsageTracker()
+usage_tracker.log_usage(api_key="...", request_data={"method": "GET", "path": "/users"})
+usage_stats = usage_tracker.get_usage(api_key="...")
+limit_exceeded = usage_tracker.check_usage_limit(api_key="...")
 ```
 
-## Important Notes:
+**5. Important notes (only if critical or important):**
 
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
-
-
+Accurate and efficient usage tracking is essential for monitoring API performance and enforcing usage limits.  The design should consider scalability and performance implications, especially for high-volume APIs.
 
 ---
 
@@ -1887,51 +524,7 @@ print(markdown)
 
 ## docgen/generators/ai_doc_generator.py
 
-# Technical Documentation: Docstring and Markdown Generators
-
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
-
-## Key Functionality:
-
-**`DocstringGenerator`:**
-
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
-
-**`MarkdownGenerator`:**
-
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
-
-## Usage Example:
-
-```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
-
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
-
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
-```
-
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
-
-
+Error: Documentation generation failed
 
 ---
 
@@ -1940,51 +533,45 @@ print(markdown)
 
 ## docgen/generators/docstring_generator.py
 
-# Technical Documentation: Docstring and Markdown Generators
+2: api_key_manager.py (Hypothetical Implementation)
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+**1. Brief purpose/overview in context of the overall system:**
 
-## Key Functionality:
+This file contains the `APIKeyManager` class, responsible for managing API keys. This might include generating, storing, retrieving, and validating API keys.
 
-**`DocstringGenerator`:**
+**2. All key functionality with brief explanations (bullet points):**
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
+* **generate_key():** Generates a new, unique API key.
+* **store_key(key, user_id):** Stores an API key associated with a specific user ID.  This likely involves persistence (e.g., database interaction).
+* **retrieve_key(user_id):** Retrieves the API key associated with a given user ID.
+* **validate_key(key):** Checks if an API key is valid and hasn't expired.
 
-**`MarkdownGenerator`:**
 
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
+**3. How this file interacts with imported files and files that import it:**
 
-## Usage Example:
+* **Imported by:** File 1 (namespace package) for export.
+* **Imports:**  Might import database interaction libraries (e.g., SQLAlchemy, pymongo), cryptography libraries, or other modules for key generation and storage.
+* **Interaction with other files:**  Provides the `APIKeyManager` class to other parts of the application which use it to manage API keys.
+
+
+**4. Usage example showing how it works with related files (if applicable):**
+
+(Illustrative; exact implementation depends on the actual code in `api_key_manager.py`)
 
 ```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
+from .api_key_manager import APIKeyManager
 
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
-
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
+key_manager = APIKeyManager()
+new_key = key_manager.generate_key()
+key_manager.store_key(new_key, user_id=123)
+retrieved_key = key_manager.retrieve_key(user_id=123)
+is_valid = key_manager.validate_key(retrieved_key)
 ```
 
-## Important Notes:
 
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
+**5. Important notes (only if critical or important):**
 
-
+Security is paramount.  API key generation and storage must follow best practices to prevent unauthorized access.
 
 ---
 
@@ -1993,51 +580,35 @@ print(markdown)
 
 ## docgen/generators/markdown_generator.py
 
-# Technical Documentation: Docstring and Markdown Generators
+1
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+**1. Brief purpose/overview in context of the overall system:**
 
-## Key Functionality:
+`config.py` defines a `ConfigHandler` class responsible for managing application configuration.  It handles loading, saving, updating, and resetting configuration settings from a JSON file stored in the application's directory. This configuration dictates various aspects of the `docgen` tool's behavior, such as the docstring style, output format, and file processing options.  It interacts with the `typer` library for application directory management.
 
-**`DocstringGenerator`:**
+**2. Key Functionality:**
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
+*   **Loads configuration:** Loads configuration from `config.json` in the application directory. If the file doesn't exist, it creates a default configuration.  Handles potential errors during file I/O.
+*   **Creates default configuration:** Generates a default configuration dictionary (`DEFAULT_CONFIG`) and saves it to `config.json`.
+*   **Gets configuration values:** Retrieves individual configuration values using `get()`. Provides a default value if the key is not found.
+*   **Sets configuration values:** Updates individual configuration values using `set()`, saving changes to the file.
+*   **Updates multiple configuration values:** Allows updating multiple settings at once using `update()`.
+*   **Resets configuration:** Resets the configuration to its default values using `reset()`.
+*   **Provides properties for common settings:** Offers convenient properties (`template_style`, `output_format`, `recursive`, `exclude_patterns`, `docstring_templates`) for accessing frequently used configuration options.
+*   **Error Handling:** Includes `try-except` blocks to handle potential exceptions during file operations (loading and saving configuration).
 
-**`MarkdownGenerator`:**
+**3. Interaction with other files:**
 
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
+*   **Imports:** This file imports `pathlib`, `json`, `typing`, and `typer`.  `pathlib` is used for file path manipulation, `json` for handling JSON data, `typing` for type hinting, and `typer` for obtaining the application directory.
+*   **Exported functionality:** The `ConfigHandler` class is the primary exported element.  Other modules within the `docgen` application (not provided) would likely import this class to access and modify configuration settings.  For example, a module responsible for generating documentation would use the configuration settings stored and managed by this class.
 
-## Usage Example:
+**4. Usage Example:**
 
-```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
+The provided `if __name__ == "__main__":` block demonstrates basic usage: creating a `ConfigHandler` instance, retrieving a setting, updating a setting, updating multiple settings, and resetting to defaults. A real-world application would integrate this into its main logic, potentially using the configuration to customize the generation process.
 
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
+**5. Important Notes:**
 
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
-```
-
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
-
-
+The configuration file (`config.json`) is stored in the application's directory, determined by `typer.get_app_dir("docgen")`.  This ensures platform independence and avoids hardcoding paths.  Error handling is implemented to gracefully manage situations where the configuration file is missing or I/O errors occur.  The default configuration provides sensible defaults, making the application usable without prior configuration.  The use of type hints improves code readability and maintainability.
 
 ---
 
@@ -2046,51 +617,148 @@ print(markdown)
 
 ## docgen/utils/__init__.py
 
-# Technical Documentation: Docstring and Markdown Generators
+1
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+**File:** `docgen/analyzers/__init__.py`
 
-## Key Functionality:
+**Purpose:** This file serves as the namespace package for the `docgen.analyzers` module.  It exposes the `BaseAnalyzer` and `CodeAnalyzer` classes, making them readily importable from the parent `docgen.analyzers` package.  It acts as a central point of access for the analyzer classes within the documentation generation system.
 
-**`DocstringGenerator`:**
+**Key Functionality:**
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
+* **Namespace Definition:**  Defines the `docgen.analyzers` namespace, preventing naming conflicts and providing a structured way to access analyzer classes.
+* **Class Export:** Exports `BaseAnalyzer` and `CodeAnalyzer` classes, making them available for use in other modules.  The `__all__` variable explicitly controls which names are exported.
 
-**`MarkdownGenerator`:**
+**Interactions with other files:**
 
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
+* **Imports:**
+    * `base_analyzer.py`: Imports the `BaseAnalyzer` class, which likely defines a base class for all analyzers. This file *depends* on `base_analyzer.py`.
+    * `code_analyzer.py`: Imports the `CodeAnalyzer` class, which likely implements a specific analyzer for code. This file *depends* on `code_analyzer.py`.
+* **Files that import this file:** Other modules within the `docgen` package will likely import this file to access `BaseAnalyzer` and `CodeAnalyzer` for analyzing different aspects of the codebase during documentation generation.  These modules will *depend* on `__init__.py`.
 
-## Usage Example:
+**Usage Example:**
 
 ```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
+from docgen.analyzers import CodeAnalyzer
 
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
-
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
+analyzer = CodeAnalyzer()
+# ... use the analyzer to process code ...
 ```
 
-## Important Notes:
+**Important Notes:**  This file is crucial for the organization and maintainability of the analyzer classes.  Changes here will affect how other parts of the system access and use the analyzers.  The `__all__` variable should be updated whenever new analyzer classes are added or removed.
 
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
+---
 
 
+<a id='docgen-utils-_machine_utils.cpp'></a>
+
+## docgen/utils/_machine_utils.cpp
+
+Error: Documentation generation failed
+
+---
+
+
+<a id='docgen-utils-_machine_utils.pyx'></a>
+
+## docgen/utils/_machine_utils.pyx
+
+Error: Documentation generation failed
+
+---
+
+
+<a id='docgen-utils-_machine_utils_py.py'></a>
+
+## docgen/utils/_machine_utils_py.py
+
+1
+
+1. **Brief purpose/overview in context of the overall system:** This file (`machine_utils.py` - inferred from the comment and relationship information) provides a pure Python implementation for generating a unique machine identifier.  It acts as a fallback mechanism for systems (like Windows without a C++ compiler) where a potentially more efficient Cython-based implementation might fail. The generated ID is used for uniquely identifying a machine within a larger system, likely for licensing, tracking, or other purposes.
+
+2. **All key functionality with brief explanations (bullet points):**
+    * **`get_machine_id()`:** This is the main function. It attempts to retrieve a cached machine ID. If a cached ID is not found, it generates a new ID based on stable hardware information.  It prioritizes a SHA256 hash of collected system information; if this fails, it falls back to using the MAC address.  The generated ID is then cached for future use.
+    * **`_get_stable_system_info()`:** Collects stable system information across different operating systems (Windows, macOS, Linux).  It leverages OS-specific helper functions to gather identifiers.
+    * **`_get_windows_info()`:** Retrieves Windows-specific identifiers, such as the volume serial number and computer name.  It handles potential exceptions gracefully.
+    * **`_get_macos_info()`:** Retrieves macOS-specific identifiers using `system_profiler`.  It extracts the Hardware UUID and Serial Number.  It also handles potential exceptions.
+    * **`_get_linux_info()`:** Retrieves Linux-specific identifiers from files like `/etc/machine-id`, `/var/lib/dbus/machine-id`, and DMI information from `/sys/class/dmi/id`.  It handles file existence and potential read errors.
+    * **`_get_cached_machine_id()`:** Reads the cached machine ID from `~/.docgen/cache/.machine_id`.
+    * **`_save_machine_id()`:** Saves the generated machine ID to the cache file `~/.docgen/cache/.machine_id`.  Creates the cache directory if it doesn't exist.
+
+
+3. **How this file interacts with imported files and files that import it:**
+    * **Imports:** `hashlib`, `platform`, `uuid`, `os`, `subprocess`, `ctypes` (conditionally), `socket` (conditionally). These provide the necessary functionalities for hashing, platform detection, UUID generation, file system operations, process execution, and network information retrieval.
+    * **Imported by:**  The file is imported by `machine_utils.py` (as stated in the problem description). This suggests that `machine_utils.py` likely provides a primary implementation (possibly in Cython) and this file serves as a pure Python fallback.
+
+
+4. **Usage example showing how it works with related files (if applicable):**  A usage example requires the code of `machine_utils.py`. However, we can illustrate how it might be used:
+
+```python
+# In machine_utils.py (hypothetical)
+try:
+    from .cython_machine_utils import get_machine_id  # Try Cython version first
+except ImportError:
+    from .pure_python_machine_utils import get_machine_id # Fallback to pure Python
+
+machine_id = get_machine_id()
+print(f"Machine ID: {machine_id}")
+```
+
+5. **Important notes:** The file uses a fallback mechanism to ensure a machine ID can be generated even in environments lacking a C++ compiler.  Error handling is implemented throughout to gracefully handle potential issues with accessing system information or files.  The cache mechanism improves performance by avoiding repeated expensive system calls.  The choice of identifiers prioritizes stability and uniqueness, but the exact stability depends on the underlying hardware and OS.
+
+---
+
+
+<a id='docgen-utils-ai_client.py'></a>
+
+## docgen/utils/ai_client.py
+
+1
+
+**1. Brief purpose/overview in context of the overall system:**
+
+This file acts as a re-export module for the `ConfigHandler` class defined in `config_handler.py`.  It simplifies importing the `ConfigHandler` class by making it directly accessible without needing to specify the module path. This improves code readability and maintainability.  It's a common pattern to improve organization in larger projects.
+
+
+**2. All key functionality with brief explanations (bullet points):**
+
+* **Re-exports `ConfigHandler`:** The core functionality is simply to make the `ConfigHandler` class, defined elsewhere, readily available for import.  It doesn't contain any logic of its own.
+* **Uses `__all__`:** The `__all__` variable explicitly defines what names should be imported when using `from . import *`. This prevents unintended imports and enhances control over the module's public interface.
+
+
+**3. How this file interacts with imported files and files that import it:**
+
+* **Imports from `config_handler.py`:** This file directly imports the `ConfigHandler` class from the `config_handler.py` file.  It relies on `config_handler.py` for the actual implementation of the configuration handling logic.
+* **Interaction with other files:**  Files that import this module gain access to the `ConfigHandler` class. They can then use it to interact with configuration settings. The exact interaction will depend on the implementation within `config_handler.py`.
+
+
+**4. Usage example showing how it works with related files (if applicable):**
+
+Assuming `config_handler.py` contains:
+
+```python
+class ConfigHandler:
+    def __init__(self, config_file):
+        self.config_file = config_file
+        # ... load config ...
+
+    def get_setting(self, key):
+        # ... get setting ...
+        pass
+```
+
+Then a file using this re-export module would look like this:
+
+```python
+from . import ConfigHandler
+
+handler = ConfigHandler("config.ini")
+setting = handler.get_setting("my_setting")
+print(setting)
+```
+
+**5. Important notes (only if critical or important):**
+
+This file's primary role is organization and simplifying imports.  Any errors or issues related to configuration handling will originate in `config_handler.py`.  The simplicity of this file makes it less prone to errors, but its correct functioning is entirely dependent on the correct functioning of `config_handler.py`.  It's crucial that `config_handler.py` is correctly implemented and that the `ConfigHandler` class is correctly defined.
 
 ---
 
@@ -2099,51 +767,77 @@ print(markdown)
 
 ## docgen/utils/config.py
 
-# Technical Documentation: Docstring and Markdown Generators
+2 (Hypothetical - No code provided)
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+Since no code for File 2 is provided, I will create a hypothetical example to illustrate how the documentation would look if additional files were included.  Let's assume File 2 is a module containing functions for data processing.
 
-## Key Functionality:
+* **Purpose/Overview:** This module provides functions for processing and manipulating data used by the main application.
 
-**`DocstringGenerator`:**
+* **Key Functionality:**
+    * `process_data(data):` Takes raw data as input and performs cleaning, transformation, and validation.
+    * `calculate_statistics(data):` Calculates key statistics (mean, median, standard deviation) from processed data.
+    * `generate_report(data):` Generates a report based on the processed data and calculated statistics.
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
+* **Interactions with Other Files:** This file likely imports libraries like NumPy or Pandas for data manipulation. It's also likely imported by the main application file (`main.py` in the previous example) to perform data processing before generating output or visualizations.  It might also interact with a file responsible for data input/output (e.g., a file reading data from a database or CSV).
 
-**`MarkdownGenerator`:**
-
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
-
-## Usage Example:
+* **Usage Example:**  A hypothetical use in `main.py`:
 
 ```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
+import file2
+import file1 #For version information
 
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
-
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
+data = load_data_from_source() #Hypothetical function to load data
+processed_data = file2.process_data(data)
+statistics = file2.calculate_statistics(processed_data)
+file2.generate_report(processed_data, statistics, file1.__version__) #Include version in report
 ```
 
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
+* **Important Notes:** Error handling and input validation should be implemented within the functions to ensure robustness.  The functions should be well-documented with docstrings explaining their parameters, return values, and purpose.
 
 
+
+This hypothetical example demonstrates how the documentation would describe the interaction between multiple files.  Adding more files would require expanding this structure to cover the relationships between all components.  Remember to replace the hypothetical File 2 with actual file details and code once provided.
+
+---
+
+
+<a id='docgen-utils-extension.py'></a>
+
+## docgen/utils/extension.py
+
+1
+
+**1. Brief purpose/overview in context of the overall system:**
+
+`language_config.py` defines a `LanguageConfig` class responsible for managing configuration settings for different programming languages.  This is crucial for a documentation generator (likely the `docgen` project indicated by the file path) to adapt its docstring formatting and styles based on the target language.  The system likely uses this configuration to generate documentation in various languages consistently.
+
+
+**2. Key Functionality:**
+
+* **Default Configurations:** Defines a dictionary `DEFAULT_CONFIGS` containing pre-set configurations for Python, JavaScript, and Java, specifying docstring styles, indentation levels, maximum line lengths, and docstring templates for functions and classes.
+* **Custom Configuration Loading:** The `_load_custom_configs()` method loads custom configurations from JSON files located in `~/.docgen/language_configs`.  This allows users to override or extend the default settings.  It handles merging custom configurations with defaults and gracefully manages errors during loading.
+* **Configuration Retrieval:** The `get_config(language)` method retrieves the configuration for a specified language.  It returns an empty dictionary if the language is not found.
+* **Adding New Languages:** The `add_language(language, config)` method allows adding configurations for new languages. It also saves this new configuration to the user's config directory.
+* **Configuration Saving:** The `_save_custom_config()` method saves custom language configurations to JSON files in the user's config directory.
+* **Supported Languages Retrieval:** The `get_supported_languages()` method returns a list of all currently supported programming languages.
+
+
+**3. Interactions with other files:**
+
+* **Imports:**  The file imports `typing`, `pathlib`, and `json`. `typing` provides type hints for better code readability and maintainability. `pathlib` is used for handling file paths in a platform-independent manner. `json` is used for loading and saving custom configurations from JSON files.
+* **Dependencies:** This file is likely a dependency for a main documentation generation module.  The `docgen` application would use the `LanguageConfig` class to obtain the appropriate formatting settings for the specified language before generating documentation.  Files that generate documentation would import and utilize this module to determine the appropriate formatting and templates.
+
+
+**4. Usage Example:**
+
+The provided example demonstrates how to initialize `LanguageConfig`, retrieve the Python configuration, and add a new language configuration (Rust) with its associated settings.  This showcases the core functionality of the class.  A complete example would integrate this with a docstring generation module.
+
+
+**5. Important Notes:**
+
+* The error handling in `_load_custom_configs()` is basic. More robust error handling (e.g., specific exception types) might be beneficial.
+* The location of custom configurations (`~/.docgen/language_configs`) is hardcoded.  Making this configurable would improve flexibility.
+* The code assumes JSON files are well-formed.  Adding validation would prevent unexpected behavior.
 
 ---
 
@@ -2152,51 +846,77 @@ print(markdown)
 
 ## docgen/utils/git_utils.py
 
-# Technical Documentation: Docstring and Markdown Generators
+1
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+**1. Brief purpose/overview in context of the overall system:**
 
-## Key Functionality:
+This file acts as a namespace package, exporting the `APIKeyManager` and `UsageTracker` classes from the `api_key_manager.py` and `usage_tracker.py` files respectively.  It simplifies importing these classes for other modules within the system.  This promotes modularity and maintainability.
 
-**`DocstringGenerator`:**
+**2. All key functionality with brief explanations (bullet points):**
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
+* **Namespace Export:** The primary function is to expose `APIKeyManager` and `UsageTracker` for use by other parts of the application.  It avoids the need to import from multiple files, making imports cleaner and less prone to errors.
+* **__all__ declaration:** The `__all__` list explicitly defines which names are exported when importing the module using `from . import *`. This prevents unintended namespace pollution.
 
-**`MarkdownGenerator`:**
 
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
+**3. How this file interacts with imported files and files that import it:**
 
-## Usage Example:
+* **Imports:** This file imports `APIKeyManager` from `api_key_manager.py` and `UsageTracker` from `usage_tracker.py`.  It relies on these files for the core functionality of managing API keys and tracking usage.
+* **Exports:** Other modules within the system will import `APIKeyManager` and `UsageTracker` from this file.  This file acts as a single point of access to these classes.  The exact interaction depends on the implementation within the other modules.
+
+
+**4. Usage example showing how it works with related files (if applicable):**
 
 ```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
+# In another module:
+from . import APIKeyManager, UsageTracker
 
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
+key_manager = APIKeyManager()
+# ... use key_manager ...
 
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
+usage_tracker = UsageTracker()
+# ... use usage_tracker ...
 ```
 
-## Important Notes:
+**5. Important notes (only if critical or important):**
 
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
+This file's functionality is entirely dependent on the correct implementation of `api_key_manager.py` and `usage_tracker.py`.  Errors in those files will directly impact the functionality exposed by this namespace package.  The use of relative imports (`from .`) implies that this file should reside in a package.
+
+---
 
 
+<a id='docgen-utils-machine_utils.py'></a>
+
+## docgen/utils/machine_utils.py
+
+1
+
+**1. Brief purpose/overview in context of the overall system:**
+
+This file (`__init__.py`, implicitly, given the code and context) acts as a module providing a cross-platform machine identification function (`get_machine_id`) for the `docgen` system.  Its primary purpose is to generate a stable, session-independent identifier for the machine generating documentation.  This ID is likely used to track builds, versions, or other machine-specific metadata associated with the generated documentation.  The file cleverly handles the potential absence of an optimized Cython implementation by falling back to a pure Python version.
+
+**2. All key functionality with brief explanations (bullet points):**
+
+* **Import Resolution:** Attempts to import a Cython-optimized version of `get_machine_id` from `docgen.utils._machine_utils`.
+* **Fallback Mechanism:** If the Cython version fails to import (likely due to a missing Cython compilation or dependency), it falls back to a pure Python implementation located in `docgen.utils._machine_utils_py`.  A message is printed to the console indicating the fallback.
+* **`get_machine_id` Function Exposure:**  Exports the `get_machine_id` function under the `__all__` variable, making it publicly accessible from other modules.  This function itself (defined in either `_machine_utils` or `_machine_utils_py`) is responsible for generating the machine ID.
+
+**3. How this file interacts with imported files and files that import it:**
+
+* **Imports:** This file imports either `docgen.utils._machine_utils` (Cython version) or `docgen.utils._machine_utils_py` (pure Python version), depending on availability. This dependency provides the actual implementation of the `get_machine_id` function.
+* **Imported By:**  Other modules within the `docgen` system will import this file to utilize the `get_machine_id` function.  These modules might use the machine ID for logging, versioning, or other metadata purposes in their documentation generation processes.
+
+**4. Usage example showing how it works with related files (if applicable):**
+
+```python
+from docgen.utils import get_machine_id
+
+machine_id = get_machine_id()
+print(f"Machine ID: {machine_id}")  # Output will depend on the underlying implementation
+```
+
+**5. Important notes (only if critical or important):**
+
+The fallback mechanism ensures robustness across different environments.  The choice between Cython and pure Python implementations likely reflects a trade-off between performance and ease of deployment/dependency management.  The Cython version is presumably faster but requires a Cython compiler and potentially additional dependencies. The pure Python version provides broader compatibility at the cost of potential performance.
 
 ---
 
@@ -2205,39 +925,58 @@ print(markdown)
 
 ## setup.py
 
-# `docgen-cli` Technical Documentation
+1
 
-## 1. Purpose/Overview
+1. **Brief purpose/overview in context of the overall system:** This file (`setup.py`) is a setuptools script used to build, distribute, and install the `docgen-cli` Python package. It acts as the central configuration file for the package, defining metadata, dependencies, build instructions, and entry points.  It's crucial for packaging and deployment of the documentation generator.
 
-`docgen-cli` is a command-line tool built using Python and the `setuptools` package. It automates the generation of software documentation, leveraging AI capabilities for enhanced efficiency.  This `setup.py` file configures the package for installation and distribution.
+2. **All key functionality with brief explanations (bullet points):**
+
+*   **Metadata definition:** Specifies package name, version, author, description, URLs, and classifiers for PyPI.
+*   **Version handling:** Reads the version from `version.txt` or defaults to a date-based version.
+*   **Cython extension handling:** Attempts to build Cython extensions (`_machine_utils.pyx`) if Cython is available and not on Windows.  Handles potential errors during Cython compilation gracefully.
+*   **Dependency management:** Defines `install_requires`, `setup_requires`, `build_requires`, and `extras_require` to specify project dependencies, including `aiohttp`, `google-generativeai`, and various other libraries.
+*   **Entry point definition:** Defines the `docgen` command-line interface (CLI) entry point, linking it to the `docgen.cli:app` function (presumably located in `docgen/cli.py`).
+*   **Long description:** Reads the long description from `README.md`.
+*   **Package inclusion:** Uses `find_packages` to automatically include all packages within the project, excluding test and documentation directories.  Explicitly includes `docgen.utils`.
+
+3. **How this file interacts with imported files and files that import it:**
+
+*   **Imports:** Imports modules from `setuptools`, `os`, `datetime`, `sys`, `platform`, and optionally `Cython.Build`.  It reads data from `version.txt` and `README.md`.
+*   **Interactions:**  This file is executed by `pip` or other package managers during installation.  It interacts with the specified files to gather information and build the package. The `docgen` command defined here is the entry point for the CLI, initiating execution of the main application code.  The `docgen.utils` package is included, indicating that this setup script is used to package code found within that directory.
 
 
-## 2. Key Functionality
+4. **Usage example showing how it works with related files (if applicable):**  This file is not directly called; instead, it's executed by `python setup.py install` (or similar commands used by `pip`). The interaction with other files is indirect, as specified in section 3.  `version.txt` and `README.md` are read to obtain version information and the long description for the package metadata.  `docgen/cli.py` (inferred) contains the main application code which is called when the `docgen` command is executed. `docgen/utils/_machine_utils.pyx` (or `.c` if Cython fails) contains optimized code potentially used by the application.
 
-* **Package Configuration:**  Defines metadata for the `docgen-cli` package, including name, version, author, description, and dependencies.
-* **Dependency Management:** Specifies required libraries (`typer`, `rich`, `gitpython`, `google-generativeai`) for installation using `pip`.
-* **Entry Point Definition:** Creates a console script (`docgen`) that launches the application's main function (`docgen.cli:app`).
-* **README Integration:** Reads and includes the project's README.md file in the package metadata.
-* **Classifier Specifications:**  Provides information about the package's intended audience, programming languages supported, license, and operating system compatibility.
+5. **Important notes (only if critical or important):** The script conditionally skips Cython compilation on Windows, indicating potential compatibility issues or build system complexities related to Windows compilers.  The use of a private GitHub repository is noted.  The script handles the absence of Cython gracefully, falling back to a non-optimized build. The `pywin32` package is conditionally added for Windows, implying platform-specific dependencies.
 
-## 3. Simple Usage Example
+---
 
-The usage example would involve installing the package and then running the `docgen` command.  The specifics of the command-line interface are not defined within `setup.py`.
 
-```bash
-pip install . # Install from the current directory
-docgen --help # Show available command-line options 
+<a id='test_machine_id.py'></a>
+
+## test_machine_id.py
+
+2
+
+1. **Brief purpose/overview:** This module provides a single function, `get_machine_id`, for retrieving a machine's unique identifier. It's designed to be imported and used by other parts of the system.
+
+2. **Key functionality:**
+    * Defines the `get_machine_id` function (implementation not shown). This function is responsible for obtaining the machine ID, likely through system calls or other methods.
+    * Uses `__all__ = ['get_machine_id']` to explicitly specify that only `get_machine_id` should be imported when using `from docgen.utils._machine_utils import *`. This improves code clarity and prevents accidental import of unintended variables or functions.
+
+3. **Interaction with other files:**
+    * **Imported by:** This module is imported by File 1 (`docgen.utils.machine_utils.py`).  It acts as a provider of the `get_machine_id` function.  The provided code also indicates it's imported by `test_machine_id.py` (not shown), suggesting the existence of unit tests for the `get_machine_id` function.
+
+4. **Usage example:**  (Illustrative, since `get_machine_id` implementation is unknown)
+
+```python
+from docgen.utils._machine_utils import get_machine_id
+
+machine_id = get_machine_id()
+print(f"The machine ID is: {machine_id}")
 ```
 
-
-## 4. Important Notes
-
-* This file (`setup.py`) only describes the package's structure and dependencies for installation; it does not contain the core documentation generation logic. That logic resides in the `docgen` package itself.
-* The `install_requires` section lists the minimum required versions of the dependencies.  Updating these versions requires modifying this file and reinstalling the package.
-* The `classifiers` section helps users and package managers understand the compatibility and suitability of this package for their environments.  Accuracy here is crucial for proper indexing and discoverability.
-* The `google-generativeai` dependency suggests the use of Google's AI services for documentation generation; ensure proper API keys and authentication are configured separately.
-
-
+5. **Important notes:** The actual implementation of `get_machine_id` is crucial and will determine the reliability and platform compatibility of this module.  The use of `_machine_utils` in the module name suggests it might be considered an internal module, although it is imported by other modules.  Adding more robust error handling to `get_machine_id` would improve the module's robustness.
 
 ---
 
@@ -2246,51 +985,42 @@ docgen --help # Show available command-line options
 
 ## tests/__init__.py
 
-# Technical Documentation: Docstring and Markdown Generators
+3
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+1. **Purpose/Overview:** This file (`markdown_generator.py`) provides a class (`MarkdownGenerator`) for generating markdown documentation from a structured analysis result of Python code. It's a key component responsible for producing the final human-readable documentation in markdown format.
 
-## Key Functionality:
+2. **Key Functionality:**
+    * **`MarkdownGenerator` class:**
+        * `generate_file_documentation(self, analysis_result: Dict, output_path: Optional[Path] = None) -> str`: Generates the complete markdown documentation from the analysis result. It handles module docstrings, dependencies, classes, functions, inheritance, and function calls.
+        * `_generate_class_markdown(self, class_info: Dict) -> str`: Generates markdown for a single class, including its methods.
+        * `_generate_function_markdown(self, function_info: Dict, is_method: bool = False) -> str`: Generates markdown for a function or method.
 
-**`DocstringGenerator`:**
+3. **File Interactions:**
+    * **Imported By:** `test_generator.py` (File 1) uses this module for testing. `__init__.py` likely imports it to make it part of a package.
+    * **Imports:** Uses `typing` for type hints and `pathlib` for potential file output.
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
-
-**`MarkdownGenerator`:**
-
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
-
-## Usage Example:
-
+4. **Usage Example:**
 ```python
-from docgen.generators.docstring_generator import DocstringGenerator
 from docgen.generators.markdown_generator import MarkdownGenerator
+from pathlib import Path
 
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
-
-# Markdown generation
 generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
+analysis_result = {  # Example analysis result
+    "file_docstring": "My Module",
+    "classes": [],
+    "functions": [],
+    "imports": [],
+    "relationships": {"inheritance": [], "function_calls": []}
+}
 markdown = generator.generate_file_documentation(analysis_result)
 print(markdown)
+
+# To write to a file:
+# output_path = Path("documentation.md")
+# generator.generate_file_documentation(analysis_result, output_path)
 ```
 
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
-
-
+5. **Important Notes:**  The quality of the generated markdown depends heavily on the completeness and accuracy of the `analysis_result` dictionary.  Error handling (e.g., for missing keys in `analysis_result`) could be improved for robustness.  The current implementation assumes a specific structure for the `analysis_result` dictionary.
 
 ---
 
@@ -2299,51 +1029,34 @@ print(markdown)
 
 ## tests/test_cli.py
 
-# Technical Documentation: Docstring and Markdown Generators
+2
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+1. **Brief purpose/overview:** This file (`git_utils.py`) defines the `GitAnalyzer` class, which provides functionality for analyzing changes within a Git repository.  It's a core component for identifying files modified since the last documentation update and extracting relevant code changes.
 
-## Key Functionality:
+2. **Key functionality:**
+    * `__init__`: Initializes the `GitAnalyzer` class, connecting to the local Git repository and creating a directory to store state information.  Raises a `ValueError` if not in a Git repository.
+    * `get_changed_files`: Identifies files changed since the last documentation update, considering both modifications and new files.  It filters files based on the `SUPPORTED_EXTENSIONS` and handles potential errors gracefully.  Returns a dictionary mapping file paths to change information.
+    * `update_last_documented_state`: Updates a JSON file (`last_state.json`) to record the last commit hash, timestamp, and branch analyzed, enabling incremental documentation updates.
 
-**`DocstringGenerator`:**
+3. **File interactions:**
+    * **Imports:** `extension.py`, `rich.console`, `git`, `pathlib`, `json`, `datetime`.  It uses `SUPPORTED_EXTENSIONS` from `extension.py` to filter files.  It utilizes the `git` library for repository interaction and `rich` for console output.
+    * **Imported by:** `test_git_utils.py`, `cli.py`, `__init__.py`.  The `GitAnalyzer` class is used by these modules to analyze Git changes for different purposes (testing, command-line interface, and potential internal use).
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
-
-**`MarkdownGenerator`:**
-
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
-
-## Usage Example:
-
+4. **Usage example:**
 ```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
+from docgen.utils.git_utils import GitAnalyzer
 
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
+analyzer = GitAnalyzer()
+changed_files = analyzer.get_changed_files()
+analyzer.update_last_documented_state()
 
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
+# Process changed_files dictionary
+for file_path, changes in changed_files.items():
+    print(f"File: {file_path}, Type: {changes['type']}")
+    print(f"Changes:\n{changes['changes']}")
 ```
 
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
-
-
+5. **Important notes:** The `get_changed_files` method is designed for efficiency by using `git diff-index` to fetch changes in a single operation. Error handling is incorporated throughout the class to prevent crashes due to invalid repository states or file encoding issues.
 
 ---
 
@@ -2352,51 +1065,24 @@ print(markdown)
 
 ## tests/test_config.py
 
-# Technical Documentation: Docstring and Markdown Generators
+1
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+1. **Brief purpose/overview:** This file contains unit tests for the `GitAnalyzer` class, located in `git_utils.py`.  It uses the `pytest` framework and `unittest.mock` to verify the core functionality of the `GitAnalyzer` class, ensuring accurate identification and analysis of Git changes within a repository.
 
-## Key Functionality:
+2. **Key functionality:**
+    * `test_git_analyzer_init`: Tests the initialization of the `GitAnalyzer` class, verifying that a Git repository is correctly identified.
+    * `test_get_pr_changes`: Tests the `get_pr_changes` method, which retrieves changes for a specific pull request (PR) number.  It verifies the correct extraction of modified files, additions, and deletions.
+    * `test_pr_summary_generation`: Tests the `generate_pr_summary` method, which creates a summary of changes for a given PR.  It checks for the presence of key information in the generated summary.
+    * `test_analyze_patch`: Tests the internal `_analyze_patch` method, responsible for parsing a Git patch and calculating additions and deletions.
+    * `test_error_handling`: Tests the error handling mechanisms of `get_pr_changes`, ensuring that exceptions are caught and handled gracefully.
 
-**`DocstringGenerator`:**
+3. **File interactions:**
+    * **Imports:** `pytest`, `unittest.mock`, `git_utils.py`, `pathlib`.  This file directly uses the `GitAnalyzer` class from `git_utils.py` for testing.
+    * **Imported by:** None. This file is a standalone test file and is not imported by other modules.
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
+4. **Usage example:** The file itself demonstrates usage through the pytest test functions.  It shows how to mock a Git repository and interact with the `GitAnalyzer` class to test its methods.
 
-**`MarkdownGenerator`:**
-
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
-
-## Usage Example:
-
-```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
-
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
-
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
-```
-
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
-
-
+5. **Important notes:** This file is crucial for ensuring the reliability and correctness of the `GitAnalyzer` class.  Thorough testing is vital for a tool that interacts directly with a version control system.
 
 ---
 
@@ -2405,51 +1091,21 @@ print(markdown)
 
 ## tests/test_generator.py
 
-# Technical Documentation: Docstring and Markdown Generators
+1
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+1. **Purpose/Overview:** This file (`test_generator.py` - inferred from context) contains unit tests for the `docstring_generator.py` and `markdown_generator.py` modules.  It verifies the correct functionality of docstring and markdown generation.  It's a crucial part of the testing infrastructure for the documentation generation system.
 
-## Key Functionality:
+2. **Key Functionality:**
+    * `test_docstring_generation()`: Tests the `DocstringGenerator` class from `docstring_generator.py`. It checks if the generated docstring contains expected elements like argument and return descriptions.
+    * `test_markdown_generation()`: Tests the `MarkdownGenerator` class from `markdown_generator.py`. It validates the structure and content of the generated markdown documentation, ensuring that classes, functions, and their details are correctly represented.
 
-**`DocstringGenerator`:**
+3. **File Interactions:**
+    * **Imports:** This file directly imports `DocstringGenerator` and `MarkdownGenerator` from `docstring_generator.py` and `markdown_generator.py` respectively.  It uses these classes to generate docstrings and markdown for testing purposes.
+    * **Dependencies:** The functionality of this file is entirely dependent on the correct implementation of the classes in `docstring_generator.py` and `markdown_generator.py`.  No other files directly depend on this file, as it's purely for testing.
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
+4. **Usage Example:** The code itself demonstrates the usage.  `test_docstring_generation()` shows how to use `DocstringGenerator` to create a docstring from function information, and `test_markdown_generation()` shows how to use `MarkdownGenerator` to create markdown documentation from analysis results.
 
-**`MarkdownGenerator`:**
-
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
-
-## Usage Example:
-
-```python
-from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
-
-# Docstring generation
-generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
-docstring = generator.generate_function_docstring(function_info)
-print(docstring)
-
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
-```
-
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
-
-
+5. **Important Notes:** This file is essential for ensuring the quality and correctness of the documentation generation process.  Changes to the imported modules should be accompanied by updates to these tests.
 
 ---
 
@@ -2458,50 +1114,32 @@ print(markdown)
 
 ## tests/test_git_utils.py
 
-# Technical Documentation: Docstring and Markdown Generators
+2
 
-This document describes two Python code modules: `DocstringGenerator` and `MarkdownGenerator`, used for automated documentation generation.  These generators create docstrings and Markdown formatted documentation from provided analysis results.
+1. **Purpose/Overview:** This file (`docstring_generator.py`) provides a class (`DocstringGenerator`) responsible for generating docstrings for Python functions and classes based on provided information.  It's a core component of the documentation generation system, focusing on the textual representation of function/class descriptions.
 
-## Key Functionality:
+2. **Key Functionality:**
+    * **`DocstringTemplate` dataclass:** Defines templates for function and class docstrings, allowing for potential customization in the future (currently only a single style is implemented).
+    * **`DocstringGenerator` class:**
+        * `__init__(self, template_style: str = "google")`: Initializes the generator with a specified template style (currently only supports a single style).
+        * `generate_function_docstring(self, function_info: Dict) -> str`: Generates a docstring for a function based on input information (name, arguments, return type).
+        * `_generate_description(self, name: str) -> str`: Converts a function or class name (potentially containing underscores or camel case) into a human-readable description.
+        * `_format_arguments(self, args: List[str]) -> str`: Formats a list of arguments into a nicely formatted string for inclusion in the docstring.
 
-**`DocstringGenerator`:**
+3. **File Interactions:**
+    * **Imported By:** `test_generator.py` (File 1) uses this module for testing. `__init__.py` likely imports it to make it accessible as part of a package.
+    * **Imports:** Uses the `typing` module for type hints and `dataclasses` for creating the `DocstringTemplate`.
 
-* Generates docstrings for functions based on provided metadata (name, arguments, return type).
-* Uses a template to ensure consistent docstring formatting.  The exact template is not specified in the provided code but is implied by the assertions.
-* Handles cases where the input `docstring` is `None`.
-
-**`MarkdownGenerator`:**
-
-* Generates Markdown formatted documentation for Python modules.
-* Processes analysis results containing module, class, and function information, including docstrings.
-* Organizes the output into sections for modules, classes, and functions, with appropriate headings.
-
-## Usage Example:
-
+4. **Usage Example:**
 ```python
 from docgen.generators.docstring_generator import DocstringGenerator
-from docgen.generators.markdown_generator import MarkdownGenerator
 
-# Docstring generation
 generator = DocstringGenerator()
-function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int", "docstring": None}
+function_info = {"name": "my_function", "args": ["a", "b"], "returns": "int"}
 docstring = generator.generate_function_docstring(function_info)
 print(docstring)
-
-# Markdown generation
-generator = MarkdownGenerator()
-analysis_result = { # ... (example analysis result as shown in the provided code) ... }
-markdown = generator.generate_file_documentation(analysis_result)
-print(markdown)
 ```
 
-## Important Notes:
-
-* The provided code snippets are unit tests, demonstrating the functionality of the generators.  The actual implementations of `DocstringGenerator` and `MarkdownGenerator` are not shown.
-* The structure and content of the generated docstrings and Markdown depend on the internal logic of the respective generator classes (not provided here).
-* The `analysis_result` dictionary needs to be populated appropriately with the relevant information to be included in the documentation.  The format shown is an example.
-* Error handling (e.g., for invalid input data) is not explicitly shown in the provided code.  Robust error handling should be implemented in a production environment.
-
-
+5. **Important Notes:** The current implementation only supports a single docstring style.  Extending it to support other styles would require adding more templates to `DocstringTemplate` and modifying the `generate_function_docstring` method accordingly.
 
 ---
