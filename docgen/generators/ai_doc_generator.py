@@ -1,6 +1,6 @@
 from rich.console import Console
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import json
 import hashlib
 from datetime import datetime
@@ -88,11 +88,12 @@ class AIDocGenerator:
             requests = [
                 {
                     'code': code,
-                    'prompt_type': 'doc'
+                    'prompt_type': 'doc',
+                    'file_path': str(path)
                 }
-                for _, _, code in files_data
+                for path, _, code in files_data
             ]
-            
+
             # Generate documentation concurrently
             results = await self.ai_client.generate_text_batch(requests)
             
@@ -195,7 +196,7 @@ class AIDocGenerator:
     
     @sleep_and_retry
     @limits(calls=14, period=60)
-    async def generate_update_documentation(self, code: str, changes: str) -> str:
+    async def generate_update_documentation(self, code: str, changes: str, file_path: Optional[str] = None) -> str:
         """Generate documentation specifically for code updates."""
         try:
             if not changes.strip():
@@ -207,7 +208,8 @@ class AIDocGenerator:
                     response = self.ai_client.generate_text(
                         code=code,
                         changes=changes,
-                        prompt_type='update'
+                        prompt_type='update',
+                        file_path=str(file_path)
                     )
                     if not response:
                         raise ValueError("Empty response from AI model")
@@ -237,19 +239,30 @@ class AIDocGenerator:
                 return {}
                 
             # Process files in batches through AI client
-            results = await self.ai_client.generate_update_documentation_batch(files_to_process)
+            # Convert Path objects to strings before passing to AI client
+            serializable_files = [
+                (str(path), analysis, code, changes) for path, analysis, code, changes in files_to_process
+            ]
             
-            # Cache successful results
-            for path, doc in results.items():
+            results = await self.ai_client.generate_update_documentation_batch(serializable_files)
+            
+            # Convert string paths back to Path objects for the result dictionary
+            path_results = {}
+            for str_path, doc in results.items():
+                # Find the original Path object
+                original_path = next(path for path, _, _, _ in files_to_process if str(path) == str_path)
+                path_results[original_path] = doc
+                
+                # Cache successful results
                 if not doc.startswith("Error:"):
                     cache_key = self._fast_cache_key(
-                        next(code for p, _, code, _ in files_to_process if p == path),
-                        next(analysis for p, analysis, _, _ in files_to_process if p == path),
+                        next(code for p, _, code, _ in files_to_process if str(p) == str_path),
+                        next(analysis for p, analysis, _, _ in files_to_process if str(p) == str_path),
                         query=True
                     )
                     self._save_to_cache(cache_key, doc)
             
-            return results
+            return path_results
             
         except Exception as e:
             self.console.print(f"[red]Error generating batch updates: {str(e)}[/red]")
