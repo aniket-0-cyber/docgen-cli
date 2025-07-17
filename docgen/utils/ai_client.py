@@ -34,8 +34,8 @@ class AIClient:
         self.RATE_LIMIT_WINDOW = 60    # Window in seconds
         
         # Larger batches for fewer total requests
-        self.MAX_BATCH_SIZE = 10        # Increased significantly
-        self.MAX_BATCH_TOKENS = 50000  # Doubled token limit
+        self.MAX_BATCH_SIZE = 1000        # Increased significantly
+        self.MAX_BATCH_TOKENS = 1000000  # Doubled token limit
         
         # Add cache initialization
         self.cache_dir = Path.home() / '.docgen' / 'cache'
@@ -308,9 +308,10 @@ class AIClient:
                     {
                         'code': code,
                         'changes': changes,
-                        'prompt_type': 'update'
+                        'prompt_type': 'update',
+                        'file_path': path
                     }
-                    for _, _, code, changes in uncached_files
+                    for path, _, code, changes in uncached_files
                 ]
                 
                 batches = self._create_batches(requests)

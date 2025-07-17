@@ -1,8 +1,17 @@
 # setup.py
 from setuptools import setup, find_packages, Extension
-from Cython.Build import cythonize
 import os
 from datetime import datetime
+import sys
+import platform
+
+# Try to import Cython, but don't fail if it's not available
+try:
+    from Cython.Build import cythonize
+    USE_CYTHON = True
+except ImportError:
+    USE_CYTHON = False
+    print("Cython not found. Installing without Cython extensions.")
 
 # Read version from version.txt or default to current date-based version
 def get_version():
@@ -16,21 +25,34 @@ def get_version():
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
+# Define extensions - make them optional on Windows to avoid compiler issues
+ext_modules = []
+if USE_CYTHON and platform.system() != "Windows":
+    try:
+        ext_modules = cythonize(["docgen/utils/_machine_utils.pyx"], language_level=3)
+        print("Building with Cython extensions")
+    except Exception as e:
+        print(f"Warning: Failed to cythonize: {e}")
+        USE_CYTHON = False
+else:
+    if platform.system() == "Windows":
+        print("Skipping Cython extensions on Windows to avoid compiler requirements")
+
 setup(
     name="docgen-cli",
     version=get_version(),
-    author="Aniket Singh",  # Replace with your actual name
-    author_email="aniket0999@gmail.com",  # Replace with your actual email
+    author="Aniket Singh, Varshith",
+    author_email="aniket0999@gmail.com",
     description="AI-Powered Documentation Generator for Developers",
     long_description=long_description,
     long_description_content_type="text/markdown",
     # Using private GitHub repo for now
-    url="https://github.com/aniket-0-cyber/docgen-cli",  # Replace with your actual private repo URL
+    url="https://github.com/aniket-0-cyber/docgen-cli",
     project_urls={
-        "Bug Reports": "https://github.com/aniket-0-cyber/docgen-cli/issues",  # Private repo issues
-        "Source": "https://github.com/aniket-0-cyber/docgen-cli",  # Private repo source
+        "Bug Reports": "https://github.com/aniket-0-cyber/docgen-cli/issues",
+        "Source": "https://github.com/aniket-0-cyber/docgen-cli",
     },
-    packages=find_packages(exclude=["tests*", "docs*"]),
+    packages=find_packages(exclude=["tests*", "docs*"]) + ['docgen.utils'],
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
@@ -92,6 +114,6 @@ setup(
     },
     include_package_data=True,
     keywords="documentation generator ai development tools docstring markdown",
-    ext_modules=cythonize(["docgen/utils/_machine_utils.pyx"], language_level=3),
+    ext_modules=ext_modules,
 )
 
